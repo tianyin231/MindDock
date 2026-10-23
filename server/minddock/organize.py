@@ -19,7 +19,7 @@ from minddock.links import fetch_page
 from minddock.timeutil import describe_now, friendly, to_utc_iso
 from minddock.util import emit, new_id
 
-PROMPT_VERSION = "2026-10-24.1"
+PROMPT_VERSION = "2026-10-24.2"
 
 SYSTEM_PROMPT = """你是 MindDock 的整理助手。用户把各种内容随手发给自己，你负责把每条消息归入一个分区，并提取标题、摘要、标签和时间。
 
@@ -32,8 +32,8 @@ SYSTEM_PROMPT = """你是 MindDock 的整理助手。用户把各种内容随手
 
 规则：
 1. 只输出 JSON 对象，不要输出其他内容。
-2. title：不超过 30 个字，概括内容；summary：不超过 100 个字，内容很短时可为空字符串。
-3. tags：最多 5 个简短的中文名词，优先复用已有标签：{tags}
+2. title：不超过 30 个字，写事情本身，不要带"提醒""待办""笔记""收藏"等分区词（例如写"交周报"，不写"提醒交周报"）；summary：不超过 100 个字，内容很短时为空字符串。
+3. tags：最多 5 个简短的中文名词，描述主题；不要用分区名做标签，拿不准就少给；优先复用已有标签：{tags}
 4. 时间一律按 {tz} 理解，输出带时区偏移的 ISO 8601，例如 2026-10-24T15:00:00+08:00。现在是 {now}。
 5. reminder 必须给出 remind_at；todo 有截止时间时给出 due_at，否则为 null。
 6. 只说了钟点没说日期时：今天该时刻还没到就是今天，否则是明天。

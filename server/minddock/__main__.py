@@ -85,6 +85,9 @@ def main() -> None:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
+    # HTTP 客户端默认逐条记录请求地址；附件下载地址可能带访问令牌，不写进日志
+    for noisy in ("httpx2", "httpcore2", "httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     settings = get_settings()
     if args.command == "migrate":
         version = migrate(connect(settings.db_path))

@@ -3,9 +3,16 @@
 set -euo pipefail
 cd /opt/minddock
 
+caddy_before=$(git rev-parse HEAD:deploy/Caddyfile)
 git pull --ff-only
+caddy_after=$(git rev-parse HEAD:deploy/Caddyfile)
+
 docker compose pull
 docker compose up -d --remove-orphans
+# Caddyfile 是挂载进去的文件，内容变了容器不会自动重建，需要手动重启
+if [ "$caddy_before" != "$caddy_after" ]; then
+  docker compose restart caddy
+fi
 docker image prune -f >/dev/null
 
 sleep 3
