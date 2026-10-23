@@ -115,6 +115,13 @@ export function LiveSortProvider({ children }: { children: ReactNode }) {
         })
         later(SORTED_HOLD_MS, () => land({ id: item.id, itemId: item.id, target: item.partition, title: item.title }))
         announce(item.partition, item.title)
+      } else if (e.type === 'item.updated') {
+        // 附件下载完成、手动改分区、归类失败等：刷新相关数据即可，不播放动画
+        qc.setQueryData(qk.item(e.item.id), e.item)
+        qc.invalidateQueries({ queryKey: ['items'] })
+        qc.invalidateQueries({ queryKey: qk.counts })
+      } else if (e.type === 'qq.bound') {
+        qc.invalidateQueries({ queryKey: ['qq'] })
       } else {
         const { secret } = e
         setCards((cs) => [

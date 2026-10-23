@@ -26,7 +26,7 @@ def _ms(start: float) -> int:
     return round((time.perf_counter() - start) * 1000)
 
 
-def _error_text(resp: httpx2.Response) -> str:
+def error_text(resp: httpx2.Response) -> str:
     try:
         body = resp.json()
     except ValueError:
@@ -48,13 +48,13 @@ async def probe_qq(cfg: dict[str, Any], http: httpx2.AsyncClient) -> ProbeResult
     )
     token = resp.json().get("access_token") if resp.status_code == 200 else None
     if not token:
-        return ProbeResult(False, f"获取 access_token 失败：{_error_text(resp)}")
+        return ProbeResult(False, f"获取 access_token 失败：{error_text(resp)}")
 
     api = QQ_SANDBOX_API if cfg.get("sandbox") else QQ_API
     gw = await http.get(f"{api}/gateway", headers={"Authorization": f"QQBot {token}"})
     url = gw.json().get("url") if gw.status_code == 200 else None
     if not url:
-        return ProbeResult(False, f"凭据有效，但获取网关地址失败：{_error_text(gw)}")
+        return ProbeResult(False, f"凭据有效，但获取网关地址失败：{error_text(gw)}")
     return ProbeResult(True, "凭据有效，消息网关可连接", {"gateway": url, "latency_ms": _ms(start)})
 
 
@@ -68,7 +68,7 @@ async def probe_ai(cfg: dict[str, Any], http: httpx2.AsyncClient) -> ProbeResult
         url, headers=headers, json={**base, "messages": [{"role": "user", "content": "只回复 OK"}]}
     )
     if resp.status_code != 200 or not resp.json().get("choices"):
-        return ProbeResult(False, f"调用 {cfg['model_text']} 失败：{_error_text(resp)}")
+        return ProbeResult(False, f"调用 {cfg['model_text']} 失败：{error_text(resp)}")
     latency = _ms(start)
 
     # 归类需要结构化输出：依次尝试 JSON Schema 和 JSON 模式，记录接口支持到哪一级

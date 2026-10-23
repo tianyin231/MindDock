@@ -49,6 +49,24 @@ export function SecretsPage() {
 
   const secrets = data ?? []
 
+  if (!isDemo) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-6">
+        <PageHeader partition="secret" count={0} />
+        <div className="flex flex-col items-center gap-3 rounded-2xl border bg-gradient-to-b from-indigo-500/10 to-transparent px-6 py-10 text-center">
+          <span className="flex size-12 items-center justify-center rounded-2xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400">
+            <ShieldCheckIcon className="size-6" />
+          </span>
+          <p className="font-semibold">密钥库将在下一个版本启用</p>
+          <p className="max-w-md text-sm text-muted-foreground">
+            在此之前，带 #key 或被识别为密钥的消息不会保存，机器人会提醒你撤回原消息。
+            启用后，密钥在入库时即加密，只有输入二级密码才能在浏览器里解密查看。
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <PageHeader partition="secret" count={data?.length} />

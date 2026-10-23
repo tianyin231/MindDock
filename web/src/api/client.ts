@@ -1,7 +1,8 @@
+import { httpBackend } from './backend'
 import { mockBackend } from './mock/store'
 import type { Counts, Item, ItemPartition, LiveEvent, Secret } from './types'
 
-/** 前端访问后端的唯一入口。接入真实接口时，只需替换这里的实现。 */
+/** 前端访问后端的唯一入口 */
 export interface Api {
   counts(): Promise<Counts>
   listItems(partition: ItemPartition): Promise<Item[]>
@@ -22,5 +23,6 @@ export interface Api {
   }
 }
 
-export const api: Api = mockBackend
-export const isDemo = Boolean(api.demo)
+/** VITE_DEMO=1 时使用内存里的演示数据，不需要后端（用于界面开发和截图） */
+export const isDemo = import.meta.env.VITE_DEMO === '1'
+export const api: Api = isDemo ? mockBackend : httpBackend

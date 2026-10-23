@@ -14,7 +14,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
-import { useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { ApiError } from '@/api/http'
 import {
@@ -35,6 +35,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { relativeTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { QQBinding } from './QQBinding'
 
 const SECTION_ICON: Record<string, LucideIcon> = {
   qq: BotIcon,
@@ -60,7 +61,9 @@ export function SettingsPage() {
 
       {isLoading || !sections
         ? Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-56 rounded-2xl" />)
-        : sections.map((s) => <SectionCard key={s.key} section={s} />)}
+        : sections.map((s) => (
+            <SectionCard key={s.key} section={s} extra={s.key === 'qq' ? <QQBinding /> : null} />
+          ))}
 
       <AccountCard />
       <AboutCard />
@@ -81,7 +84,7 @@ function initialDraft(section: SettingSection): Draft {
   return draft
 }
 
-function SectionCard({ section }: { section: SettingSection }) {
+function SectionCard({ section, extra }: { section: SettingSection; extra?: ReactNode }) {
   const Icon = SECTION_ICON[section.key] ?? SettingsIcon
   const base = useMemo(() => initialDraft(section), [section])
   const [draft, setDraft] = useState<Draft>(base)
@@ -173,6 +176,8 @@ function SectionCard({ section }: { section: SettingSection }) {
           />
         ))}
       </div>
+
+      {extra}
 
       <AnimatePresence initial={false}>
         {result && (

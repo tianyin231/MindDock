@@ -50,6 +50,22 @@ def migrate(conn: sqlite3.Connection) -> int:
     return current
 
 
+def latest_version() -> int:
+    return _migrations()[-1][0]
+
+
+async def wait_for_schema(conn: sqlite3.Connection, timeout: float = 120) -> None:
+    """bot / worker 不自己迁移，等面板把数据库迁移到最新版本，避免多进程同时迁移。"""
+    import asyncio
+
+    target, waited = latest_version(), 0.0
+    while conn.execute("PRAGMA user_version").fetchone()[0] < target:
+        if waited >= timeout:
+            raise RuntimeError(f"等待数据库迁移到版本 {target} 超时，请确认面板服务已启动")
+        await asyncio.sleep(1)
+        waited += 1
+
+
 def now_iso(offset_seconds: int = 0) -> str:
     """UTC 时间，ISO 8601，秒级精度，例如 2026-10-23T07:30:12Z。同格式的字符串可以直接比较大小。"""
     moment = datetime.now(UTC) + timedelta(seconds=offset_seconds)

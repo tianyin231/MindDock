@@ -5,6 +5,7 @@ import {
   CloudAlertIcon,
   CloudIcon,
   CloudUploadIcon,
+  DownloadIcon,
   FileArchiveIcon,
   FileIcon,
   FileTextIcon,
@@ -34,9 +35,16 @@ function FileKindIcon({ att, className }: { att: Attachment; className?: string 
   return <FileIcon className={className} />
 }
 
-/** 缩略图。真实版本使用服务器生成的 WebP；演示数据用色块代替 */
+/** 缩略图：图片已在服务器上就直接显示，否则用色块占位 */
 export function Thumb({ att, className }: { att: Attachment; className?: string }) {
   const visual = att.kind === 'image' || att.kind === 'video'
+  if (att.previewUrl) {
+    return (
+      <div className={cn('overflow-hidden rounded-lg bg-muted', className)}>
+        <img src={att.previewUrl} alt={att.name} loading="lazy" className="size-full object-cover" />
+      </div>
+    )
+  }
   return (
     <div
       className={cn('relative flex items-center justify-center overflow-hidden rounded-lg', className)}
@@ -85,21 +93,35 @@ export function UploadStatus({ status }: { status: Attachment['uploadStatus'] })
 }
 
 export function AttachmentRow({ att, onClick }: { att: Attachment; onClick?: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-muted/60"
-    >
+  const body = (
+    <>
       <Thumb att={att} className="size-10 shrink-0" />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium">{att.name}</span>
         <span className="text-xs text-muted-foreground">
-          {fileSize(att.size)}
-          {att.durationSec !== undefined && ` · ${duration(att.durationSec)}`}
+          {att.size ? fileSize(att.size) : '下载中…'}
+          {att.durationSec != null && ` · ${duration(att.durationSec)}`}
         </span>
       </span>
-      <UploadStatus status={att.uploadStatus} />
+      {att.downloadUrl && !onClick ? (
+        <DownloadIcon className="size-4 shrink-0 text-muted-foreground" />
+      ) : (
+        <UploadStatus status={att.uploadStatus} />
+      )}
+    </>
+  )
+  const cls = 'flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-muted/60'
+  // 详情里可直接下载原件；列表里点击打开详情
+  if (att.downloadUrl && !onClick) {
+    return (
+      <a href={att.downloadUrl} className={cls} title="下载原件">
+        {body}
+      </a>
+    )
+  }
+  return (
+    <button type="button" onClick={onClick} className={cls}>
+      {body}
     </button>
   )
 }

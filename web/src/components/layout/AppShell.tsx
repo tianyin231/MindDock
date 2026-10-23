@@ -15,6 +15,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, NavLink, Outlet, useNavigate, useSearchParams } from 'react-router'
 import { isDemo } from '@/api/client'
 import { useCounts } from '@/api/hooks'
+import { useQQ } from '@/api/qq'
 import { useSettings } from '@/api/settings'
 import { AnimatedCount, Logo } from '@/components/common'
 import { ItemSheet } from '@/components/ItemSheet'
@@ -126,33 +127,47 @@ function SideLink({
   )
 }
 
-const STATUS_ROWS = [
-  { key: 'qq', label: 'QQ 机器人' },
-  { key: 'ai', label: 'AI 模型' },
-  { key: 'storage', label: '夸克网盘' },
-]
-
 function StatusPanel({ onNavigate }: { onNavigate?: () => void }) {
   const { data: sections } = useSettings()
+  const { data: qq } = useQQ()
+  const configured = (key: string) => sections?.find((s) => s.key === key)?.configured
+
+  const qqText = !qq
+    ? '…'
+    : qq.status.online
+      ? qq.owner.bound
+        ? '在线'
+        : '在线 · 未绑定'
+      : qq.configured
+        ? '离线'
+        : '未配置'
+  const rows = [
+    { label: 'QQ 机器人', ok: Boolean(qq?.status.online && qq.owner.bound), text: qqText },
+    ...[
+      { key: 'ai', label: 'AI 模型' },
+      { key: 'storage', label: '夸克网盘' },
+    ].map((r) => {
+      const c = configured(r.key)
+      return { label: r.label, ok: Boolean(c), text: c === undefined ? '…' : c ? '已配置' : '未配置' }
+    }),
+  ]
+
   return (
     <Link
       to="/settings"
       onClick={onNavigate}
       className="mt-auto block space-y-2 rounded-xl border bg-background/60 p-3 text-xs transition-colors hover:bg-background"
     >
-      {STATUS_ROWS.map((r) => {
-        const configured = sections?.find((s) => s.key === r.key)?.configured
-        return (
-          <div key={r.key} className="flex items-center justify-between">
-            <span className="text-muted-foreground">{r.label}</span>
-            <span className="flex items-center gap-1.5">
-              <span className={cn('size-1.5 rounded-full', configured ? 'bg-emerald-500' : 'bg-amber-500')} />
-              {configured === undefined ? '…' : configured ? '已配置' : '未配置'}
-            </span>
-          </div>
-        )
-      })}
-      {isDemo && <p className="border-t pt-2 text-[11px] text-muted-foreground">分区内容暂为演示数据</p>}
+      {rows.map((r) => (
+        <div key={r.label} className="flex items-center justify-between">
+          <span className="text-muted-foreground">{r.label}</span>
+          <span className="flex items-center gap-1.5">
+            <span className={cn('size-1.5 rounded-full', r.ok ? 'bg-emerald-500' : 'bg-amber-500')} />
+            {r.text}
+          </span>
+        </div>
+      ))}
+      {isDemo && <p className="border-t pt-2 text-[11px] text-muted-foreground">演示模式：使用内存中的示例数据</p>}
     </Link>
   )
 }

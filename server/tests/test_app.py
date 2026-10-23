@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from minddock.app import create_app
 from minddock.config import Settings
+from minddock.db import latest_version
 
 
 def make_client(tmp_path, dist=None) -> TestClient:
@@ -14,7 +15,7 @@ def test_health_reports_schema_version(tmp_path):
         body = client.get("/api/health").json()
 
     assert body["status"] == "ok"
-    assert body["schema"] == 2
+    assert body["schema"] == latest_version()
 
 
 def test_spa_fallback_serves_index_but_not_for_api(tmp_path):

@@ -2,14 +2,14 @@ import sqlite3
 
 import pytest
 
-from minddock.db import connect, migrate, now_iso
+from minddock.db import connect, latest_version, migrate, now_iso
 
 
 def test_migrate_creates_schema_and_is_idempotent(tmp_path):
     conn = connect(tmp_path / "t.db")
 
-    assert migrate(conn) == 2
-    assert migrate(conn) == 2
+    assert migrate(conn) == latest_version()
+    assert migrate(conn) == latest_version()
 
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert {"items", "files", "todos", "reminders", "secrets", "jobs", "events"} <= tables

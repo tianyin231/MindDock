@@ -1,6 +1,7 @@
 import { Loader2Icon, WifiOffIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router'
+import { isDemo } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { useAuthState } from './auth'
 
@@ -9,6 +10,8 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   const { data, isLoading, isError, refetch } = useAuthState()
   const location = useLocation()
 
+  // 演示模式没有后端，直接进入
+  if (isDemo) return children
   if (isLoading) {
     return (
       <div className="flex min-h-svh items-center justify-center text-muted-foreground">

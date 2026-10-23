@@ -13,7 +13,9 @@ https://{$MINDDOCK_DOMAIN}:8443 {
 		}
 	}
 
-	encode zstd gzip
+	# 实时事件（SSE）不压缩，避免被缓冲导致推送延迟
+	@compressible not path /api/events
+	encode @compressible zstd gzip
 
 	header {
 		Strict-Transport-Security "max-age=31536000"

@@ -136,6 +136,10 @@ class SettingsStore:
             values[f.key] = value
         return values
 
+    def version(self, key: str) -> str | None:
+        """分组最后保存的时间；常驻服务据此判断设置是否变化。"""
+        return self._raw(key).get("_updated_at")
+
     def configured(self, key: str) -> bool:
         values = self.get(key)
         return all(

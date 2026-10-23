@@ -42,12 +42,37 @@ async def _check(sections: list[str]) -> None:
             print(f"[{key}] {'通过' if result.ok else '失败'}：{result.message} {result.details}")
 
 
+async def _run_service(name: str) -> None:
+    """常驻服务：bot（QQ 连接）或 worker（后台任务）。"""
+    import httpx2
+
+    from minddock.db import wait_for_schema
+    from minddock.security import load_cipher
+    from minddock.settings_store import SettingsStore
+
+    config = get_settings()
+    conn = connect(config.db_path)
+    await wait_for_schema(conn)
+    store = SettingsStore(conn, load_cipher(config.secret_key, config.data_dir))
+    async with httpx2.AsyncClient(timeout=30, follow_redirects=True) as http:
+        if name == "bot":
+            from minddock.bot import Bot
+
+            await Bot(conn, store, http, config).run()
+        else:
+            from minddock.worker import Worker
+
+            await Worker(conn, store, http, config).run()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="minddock")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("migrate", help="应用数据库迁移")
     check = sub.add_parser("check", help="用已保存的设置测试各项连接")
     check.add_argument("sections", nargs="*", default=["qq", "ai", "storage"])
+    sub.add_parser("bot", help="启动常驻 QQ 连接")
+    sub.add_parser("worker", help="启动后台任务（下载附件、AI 整理）")
     panel = sub.add_parser("panel", help="启动面板服务")
     panel.add_argument("--host", help="监听地址，默认取配置 panel_host")
     panel.add_argument("--port", type=int, help="监听端口，默认取配置 panel_port")
@@ -66,6 +91,8 @@ def main() -> None:
         print(f"数据库已迁移到版本 {version}：{settings.db_path}")
     elif args.command == "check":
         asyncio.run(_check(args.sections))
+    elif args.command in ("bot", "worker"):
+        asyncio.run(_run_service(args.command))
     elif args.command == "panel":
         import uvicorn
 

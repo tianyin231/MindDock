@@ -9,18 +9,38 @@ x-logging: &logging
     max-size: 10m
     max-file: "3"
 
+# panel / bot / worker 使用同一个镜像和数据目录，只是启动命令不同
+x-app: &app
+  image: ghcr.io/tianyin231/minddock:${MINDDOCK_TAG:-main}
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    MINDDOCK_OPENLIST_URL: http://openlist:5244
+  volumes:
+    - ./data/panel:/data
+  networks: [internal]
+  logging: *logging
+
 services:
   panel:
-    image: ghcr.io/tianyin231/minddock:${MINDDOCK_TAG:-main}
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      MINDDOCK_OPENLIST_URL: http://openlist:5244
-    volumes:
-      - ./data/panel:/data
-    networks: [internal]
+    <<: *app
     mem_limit: 512m
-    logging: *logging
+
+  bot:
+    <<: *app
+    command: ["python", "-m", "minddock", "bot"]
+    depends_on: [panel]
+    healthcheck:
+      disable: true
+    mem_limit: 192m
+
+  worker:
+    <<: *app
+    command: ["python", "-m", "minddock", "worker"]
+    depends_on: [panel]
+    healthcheck:
+      disable: true
+    mem_limit: 384m
 
   openlist:
     image: openlistteam/openlist:v4.2.7

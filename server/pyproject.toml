@@ -11,7 +11,10 @@ dependencies = [
     "pynacl>=1.6.2",
     "pyotp>=2.10.0",
     "segno>=1.6.6",
+    "trafilatura>=2.3.1",
+    "tzdata>=2026.5",
     "uvicorn[standard]>=0.54.0",
+    "websockets>=17.3",
 ]
 
 [dependency-groups]
@@ -31,3 +34,5 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+# 行宽交给 ruff format；它不拆分 SQL 和中文提示等长字符串，这类行不再单独报错
+ignore = ["E501"]

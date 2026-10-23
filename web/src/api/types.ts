@@ -10,9 +10,13 @@ export interface Attachment {
   size: number
   mime: string
   uploadStatus: 'pending' | 'uploading' | 'uploaded' | 'failed'
-  /** 缩略图主色调（演示数据用） */
+  /** 缩略图占位色调 */
   hue: number
-  durationSec?: number
+  durationSec?: number | null
+  /** 图片已下载到服务器时的预览地址 */
+  previewUrl?: string | null
+  /** 原件已在服务器时的下载地址 */
+  downloadUrl?: string | null
 }
 
 export interface LinkInfo {
@@ -66,4 +70,6 @@ export type Counts = Record<PartitionKey, number>
 export type LiveEvent =
   | { type: 'item.received'; item: Item }
   | { type: 'item.classified'; item: Item }
+  | { type: 'item.updated'; item: Item }
   | { type: 'secret.stored'; secret: Secret }
+  | { type: 'qq.bound' }

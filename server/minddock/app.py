@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from minddock import __version__
-from minddock.api import auth, settings
+from minddock.api import auth, items, live, qq, settings
 from minddock.config import Settings, get_settings
 from minddock.db import connect, migrate
 from minddock.security import load_cipher
@@ -63,8 +63,8 @@ def create_app(config: Settings | None = None) -> FastAPI:
             "schema": schema,
         }
 
-    app.include_router(auth.router)
-    app.include_router(settings.router)
+    for module in (auth, settings, items, live, qq):
+        app.include_router(module.router)
     _mount_web(app, config.web_dist_dir)
     return app
 
