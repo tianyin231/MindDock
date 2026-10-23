@@ -15,7 +15,14 @@ if [ "$caddy_before" != "$caddy_after" ]; then
 fi
 docker image prune -f >/dev/null
 
-sleep 3
 docker compose ps
-docker compose exec -T panel python -c \
-  "import json, urllib.request; h = json.load(urllib.request.urlopen('http://127.0.0.1:8080/api/health')); print('当前版本:', h['version'], h['build'], h['commit'])"
+# 等面板启动完成再读取版本，最多等 60 秒
+for _ in $(seq 1 30); do
+  if docker compose exec -T panel python -c \
+    "import json, urllib.request; h = json.load(urllib.request.urlopen('http://127.0.0.1:8080/api/health')); print('当前版本:', h['version'], h['build'], h['commit'])" 2>/dev/null; then
+    exit 0
+  fi
+  sleep 2
+done
+echo "面板 60 秒内没有就绪，请查看：docker compose logs panel" >&2
+exit 1
