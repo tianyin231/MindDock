@@ -1,0 +1,28 @@
+[project]
+name = "minddock"
+version = "0.1.0"
+description = "MindDock 后端：QQ 收件、自动归类、提醒与第二大脑"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.161.1",
+    "pydantic-settings>=2.16.1",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.16.0",
+    "pytest>=9.1.1",
+    "ruff>=0.17.2",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

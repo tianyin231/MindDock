@@ -1,0 +1,5 @@
+# 仓库内统一使用 LF，部署到 Linux 不出问题
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.woff2 binary
