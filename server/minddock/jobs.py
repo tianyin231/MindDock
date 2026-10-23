@@ -34,13 +34,17 @@ def enqueue(conn: sqlite3.Connection, job_type: str, ref_id: str, delay: int = 0
 
 def claim(conn: sqlite3.Connection) -> Job | None:
     now = now_iso()
-    row = conn.execute(
+    # 用 fetchall 读完 RETURNING 的结果，语句才算执行完毕并释放写锁
+    rows = conn.execute(
         "UPDATE jobs SET status = 'running', locked_at = ?, attempts = attempts + 1, updated_at = ? "
         "WHERE id = (SELECT id FROM jobs WHERE status IN ('queued', 'failed') AND run_after <= ? "
         "ORDER BY run_after, id LIMIT 1) RETURNING id, type, ref_id, attempts",
         (now, now, now),
-    ).fetchone()
-    return Job(row["id"], row["type"], row["ref_id"], row["attempts"]) if row else None
+    ).fetchall()
+    if not rows:
+        return None
+    row = rows[0]
+    return Job(row["id"], row["type"], row["ref_id"], row["attempts"])
 
 
 def complete(conn: sqlite3.Connection, job: Job) -> None:
