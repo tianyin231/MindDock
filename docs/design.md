@@ -1,7 +1,7 @@
 # MindDock：随身、安全、分门别类的第二大脑
 
-> **设计与实施方案 · v2.1**
-> **编制日期：2026-10-23**
+> **设计与实施方案 · v2.2**
+> **编制日期：2026-10-23，2026-10-24 更新（部署、账号体系、面板设置）**
 > **仓库：https://github.com/tianyin231/MindDock**
 > **实施环境：海外 Linux 云服务器（带宽尚可）；夸克网盘会员；OpenAI 兼容 AI 接口；QQ 开放平台官方机器人（新建专用）；主力手机为安卓**
 > **前身：v1《Personal Hub 部署与扩展实施方案》（[archive/Personal_Hub_Deployment_Guide.md](archive/Personal_Hub_Deployment_Guide.md)），其中的最小权限、加密备份、恢复演练原则继续沿用**
@@ -37,7 +37,7 @@
 │  worker   后台任务：抓网页 / AI 归类整理 / 缩略图 / 上传夸克 / 备份 / 提醒调度 │
 │  panel    JSON 接口 + SSE 实时推送 + 托管前端页面                        │
 │  openlist 夸克 cookie 驱动 → WebDAV（仅容器内网）                      │
-│  caddy    面板 HTTPS 入口（443）                                       │
+│  caddy    面板 HTTPS 入口（8443；本机 443 已被其他服务占用）          │
 │                                                                      │
 │  data/minddock.db（SQLite）  data/staging/  data/thumbs/  data/vault/ │
 └──────────────────────────────────────────────────────────────────────┘
@@ -52,7 +52,7 @@
 | `worker` | 执行任务队列中的所有后台任务，调度到期提醒 | 无 |
 | `panel` | JSON 接口、SSE 实时事件、面板上传、托管前端构建产物 | 仅经 `caddy` |
 | `openlist` | 把夸克挂载为 WebDAV | 无；管理界面经 SSH 隧道访问 |
-| `caddy` | HTTPS 与证书自动续期 | 80 / 443 |
+| `caddy` | HTTPS 与证书自动续期 | 8443；80 端口由宝塔 nginx 把证书验证请求转给它 |
 
 `bot`、`worker`、`panel` 使用同一份代码、同一个镜像，只是启动命令不同；共享一个 SQLite 数据库（WAL 模式，设置 `busy_timeout`）。三个进程之间通过数据库表传递事件（例如 `events` 表），`panel` 读取后经 SSE 推给浏览器。
 
@@ -270,9 +270,11 @@
 
 ### 9.3 登录与安全
 
-- 用户名 + 密码（Argon2id 哈希）+ **TOTP 必选**；TOTP 种子用 `APP_SECRET` 加密后存库。
-- 服务端会话表；Cookie 设置 HttpOnly、Secure、SameSite=Strict；会话 7 天，删除与密钥库相关操作要求最近 15 分钟内输入过 TOTP。
-- 修改类请求校验自定义请求头，配合 SameSite 防 CSRF。
+- **首次初始化**：面板开放在公网，首次打开需要输入只打印在服务器日志里的一次性初始化码，然后创建唯一账号并绑定验证器（TOTP）。
+- **日常登录**：用户名 + 密码（Argon2id 哈希），使用标准登录表单，浏览器可保存并自动填充；在新浏览器上额外输入验证码，可勾选"信任此设备 30 天"，期间只需密码。TOTP 种子用主密钥加密后存库，同一验证码只能用一次。
+- **密钥库二级密码不允许浏览器保存**，每次手动输入。
+- 服务端会话表与受信任设备表只存令牌哈希；Cookie 设置 HttpOnly、Secure、SameSite=Strict；会话 30 天。
+- 修改类请求必须带 `X-MindDock` 请求头，配合 SameSite 防 CSRF。
 - 登录失败限速：同一 IP 每分钟 5 次，连续 10 次失败锁定 15 分钟。
 - 内容安全策略（CSP）只允许加载本站脚本；所有前端依赖打包进构建产物，不使用 CDN。
 - 登录、密钥库访问、删除写入审计日志。
@@ -319,6 +321,8 @@ SQLite FTS5 使用 `trigram` 分词器，支持 3 字及以上的任意子串检
 
 单个镜像（多阶段构建：Node 阶段编译前端 → `python:3.12-slim-bookworm` 运行），跑 `bot`、`worker`、`panel` 三个服务；另有 Caddy 2 与 OpenList。所有镜像与依赖固定版本。
 
+**版本与发布用 git 驱动**：推送 `main` 后 GitHub Actions 先跑后端测试、前端检查与构建，再构建镜像发布到 `ghcr.io/tianyin231/minddock`（标签 `main` 与 `sha-xxxxxxx`）；打 `v0.x.y` 标签发布正式版本（标签 `0.x.y` 与 `latest`）。服务器内存紧张，只拉取镜像、不在本机编译；`deploy/update.sh` 负责拉代码、拉镜像、重启。
+
 ## 11. 数据模型（SQLite）
 
 完整定义见 `server/minddock/migrations/`。主要表：
@@ -346,17 +350,12 @@ SQLite FTS5 使用 `trigram` 分词器，支持 3 字及以上的任意子串检
 ### 12.1 服务器目录
 
 ```text
-/opt/minddock/
-├── compose.yaml
-├── .env                 # 权限 600，不进 Git
-├── data/
-│   ├── minddock.db      # SQLite（WAL）
-│   ├── staging/         # 原件暂存
-│   ├── thumbs/          # 缩略图
-│   ├── vault/           # 密钥类文件的密文
-│   └── openlist/        # OpenList 配置（含夸克 cookie）
-├── caddy/
-└── backups/             # 本地加密备份，保留 7 份
+/opt/minddock/           # 本仓库的 git 克隆：compose.yaml、deploy/ 随 git 更新
+├── .env                 # install.sh 生成，权限 600，不进 Git
+└── data/                # 不进 Git
+    ├── panel/           # minddock.db（SQLite，WAL）、暂存、缩略图、密钥文件密文
+    ├── openlist/        # OpenList 配置（含夸克 cookie）
+    └── caddy/           # HTTPS 证书
 ```
 
 ### 12.2 代码组织
@@ -380,22 +379,30 @@ MindDock/
 └── docs/                   # 设计文档
 ```
 
-### 12.3 环境变量
+### 12.3 配置
+
+**业务设置全部在面板"设置"页填写**，按分组存进 `settings` 表，密钥类字段用主密钥加密，接口只返回"是否已设置"和末尾 4 位，每组都有"测试连接"：
+
+| 分组 | 内容 | 测试连接做什么 |
+| --- | --- | --- |
+| QQ 机器人 | AppID、AppSecret、是否沙箱 | 换取 access_token，并获取消息网关地址 |
+| AI 模型 | 接口地址、API Key、文字 / 图片 / 向量模型 | 调用一次文字模型，并检测是否支持 JSON Schema 或 JSON 模式 |
+| 夸克网盘 | 夸克 Cookie、归档目录 | 由 MindDock 调用 OpenList 管理接口挂载夸克，再上传、读取、删除一个测试文件 |
+| 邮件通知 | SMTP 服务器、端口、发件邮箱、授权码、收件邮箱 | 发送一封测试邮件 |
+
+你的 openid（唯一允许的发送者、提醒接收者）在 M0 中通过"在 QQ 里给机器人发送面板上显示的绑定码"自动记录。
+
+**`.env` 只放部署层面的配置**，由 `install.sh` 生成：
 
 | 变量 | 说明 |
 | --- | --- |
-| `QQ_APP_ID` / `QQ_APP_SECRET` | 机器人凭据 |
-| `QQ_OWNER_OPENID` | 你自己的 openid：唯一允许的发送者，也是提醒与告警的接收者；首次发消息时从日志获取 |
-| `AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL_TEXT` / `AI_MODEL_VISION` | AI 接口 |
+| `MINDDOCK_DOMAIN` / `MINDDOCK_PUBLIC_URL` | 面板域名与访问地址 |
+| `MINDDOCK_TAG` | 镜像标签：`main` 跟随最新提交，或固定为某个版本 |
+| `MINDDOCK_SECRET_KEY` | 主密钥：加密面板设置中的密钥字段与 TOTP 种子 |
+| `MINDDOCK_OPENLIST_ADMIN_PASSWORD` | 内置 OpenList 的管理员密码 |
 | `TZ` | 时区，默认 `Asia/Shanghai` |
-| `STORAGE_PRIMARY` | `quark` 或 `r2` |
-| `OPENLIST_WEBDAV_URL` / `OPENLIST_USER` / `OPENLIST_PASSWORD` | 容器内网 WebDAV |
-| `R2_ENDPOINT` / `R2_BUCKET` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | 备份与备用后端 |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `NOTIFY_EMAIL` | 邮件兜底渠道 |
-| `PANEL_DOMAIN` | 面板域名；为空时只在 Tailscale 地址上提供面板 |
-| `APP_SECRET` | 会话签名、TOTP 种子加密 |
-| `BACKUP_AGE_RECIPIENT` | 备份加密公钥；对应私钥离线保存 |
-| `STAGING_KEEP_DAYS` / `DISK_MIN_FREE_PCT` | 暂存策略，默认 7 / 20 |
+
+备份（M1）会额外加入 `BACKUP_AGE_RECIPIENT` 等配置。
 
 ### 12.4 服务器基线
 
@@ -500,10 +507,11 @@ MindDock/
 
 ## 17. 待定事项
 
-- 面板走域名还是 Tailscale；
 - 暂存保留天数（默认 7 天）；
 - 是否需要"重要原件双存"；
-- 仓库目前为公开仓库，是否改为私有。
+- 仓库目前为公开仓库，是否改为私有（改为私有后服务器拉镜像需要登录 ghcr.io）。
+
+已定：面板走公网域名 `https://minddock.nanamiyako.cn:8443`；登录为密码 + 新设备验证码；业务设置在面板中填写；部署在 us3q。
 
 ## 18. 参考资料
 

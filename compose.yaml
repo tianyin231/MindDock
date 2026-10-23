@@ -1,0 +1,56 @@
+# MindDock 部署编排。服务器上的 /opt/minddock 是本仓库的克隆，配置写在同目录的 .env（install.sh 生成）。
+# 对外只开放 8443（HTTPS）；80 端口由宝塔 nginx 把证书验证请求转给 Caddy（见 deploy/nginx-site.conf）。
+
+name: minddock
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+services:
+  panel:
+    image: ghcr.io/tianyin231/minddock:${MINDDOCK_TAG:-main}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MINDDOCK_OPENLIST_URL: http://openlist:5244
+    volumes:
+      - ./data/panel:/data
+    networks: [internal]
+    mem_limit: 512m
+    logging: *logging
+
+  openlist:
+    image: openlistteam/openlist:v4.2.7
+    restart: unless-stopped
+    environment:
+      OPENLIST_ADMIN_PASSWORD: ${MINDDOCK_OPENLIST_ADMIN_PASSWORD:?需要在 .env 中设置}
+      UMASK: "022"
+      TZ: Asia/Shanghai
+    volumes:
+      - ./data/openlist:/opt/openlist/data
+    networks: [internal]
+    mem_limit: 384m
+    logging: *logging
+
+  caddy:
+    image: caddy:2.11.7-alpine
+    restart: unless-stopped
+    depends_on: [panel]
+    ports:
+      - "8443:8443"
+      - "127.0.0.1:8081:80"
+    environment:
+      MINDDOCK_DOMAIN: ${MINDDOCK_DOMAIN:?需要在 .env 中设置}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/caddy/data:/data
+      - ./data/caddy/config:/config
+    networks: [internal]
+    mem_limit: 128m
+    logging: *logging
+
+networks:
+  internal: {}

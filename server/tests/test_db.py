@@ -8,8 +8,8 @@ from minddock.db import connect, migrate, now_iso
 def test_migrate_creates_schema_and_is_idempotent(tmp_path):
     conn = connect(tmp_path / "t.db")
 
-    assert migrate(conn) == 1
-    assert migrate(conn) == 1
+    assert migrate(conn) == 2
+    assert migrate(conn) == 2
 
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert {"items", "files", "todos", "reminders", "secrets", "jobs", "events"} <= tables

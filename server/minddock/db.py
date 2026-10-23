@@ -5,7 +5,7 @@
 
 import re
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
@@ -50,6 +50,7 @@ def migrate(conn: sqlite3.Connection) -> int:
     return current
 
 
-def now_iso() -> str:
-    """UTC 时间，ISO 8601，秒级精度，例如 2026-10-23T07:30:12Z。"""
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+def now_iso(offset_seconds: int = 0) -> str:
+    """UTC 时间，ISO 8601，秒级精度，例如 2026-10-23T07:30:12Z。同格式的字符串可以直接比较大小。"""
+    moment = datetime.now(UTC) + timedelta(seconds=offset_seconds)
+    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")

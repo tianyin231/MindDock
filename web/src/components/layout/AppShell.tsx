@@ -7,14 +7,15 @@ import {
   MonitorIcon,
   MoonIcon,
   SearchIcon,
+  SettingsIcon,
   SunIcon,
   type LucideIcon,
 } from 'lucide-react'
-import { useTheme } from 'next-themes'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, NavLink, Outlet, useNavigate, useSearchParams } from 'react-router'
 import { isDemo } from '@/api/client'
 import { useCounts } from '@/api/hooks'
+import { useSettings } from '@/api/settings'
 import { AnimatedCount, Logo } from '@/components/common'
 import { ItemSheet } from '@/components/ItemSheet'
 import { Badge } from '@/components/ui/badge'
@@ -29,6 +30,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { PARTITIONS } from '@/lib/partitions'
+import { useTheme, type Theme } from '@/lib/theme-context'
 import { cn } from '@/lib/utils'
 
 export function AppShell() {
@@ -75,9 +77,11 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             onNavigate={onNavigate}
           />
         ))}
+        <div className="my-3 border-t" />
+        <SideLink to="/settings" icon={SettingsIcon} label="设置" onNavigate={onNavigate} />
       </nav>
 
-      <StatusPanel />
+      <StatusPanel onNavigate={onNavigate} />
     </div>
   )
 }
@@ -122,25 +126,34 @@ function SideLink({
   )
 }
 
-function StatusPanel() {
-  const rows = [
-    { label: 'QQ 机器人', state: '在线' },
-    { label: '夸克网盘', state: '正常' },
-    { label: 'AI 接口', state: '正常' },
-  ]
+const STATUS_ROWS = [
+  { key: 'qq', label: 'QQ 机器人' },
+  { key: 'ai', label: 'AI 模型' },
+  { key: 'storage', label: '夸克网盘' },
+]
+
+function StatusPanel({ onNavigate }: { onNavigate?: () => void }) {
+  const { data: sections } = useSettings()
   return (
-    <div className="mt-auto space-y-2 rounded-xl border bg-background/60 p-3 text-xs">
-      {rows.map((r) => (
-        <div key={r.label} className="flex items-center justify-between">
-          <span className="text-muted-foreground">{r.label}</span>
-          <span className="flex items-center gap-1.5">
-            <span className="size-1.5 rounded-full bg-emerald-500" />
-            {r.state}
-          </span>
-        </div>
-      ))}
-      {isDemo && <p className="border-t pt-2 text-[11px] text-muted-foreground">当前为演示数据，尚未连接服务器</p>}
-    </div>
+    <Link
+      to="/settings"
+      onClick={onNavigate}
+      className="mt-auto block space-y-2 rounded-xl border bg-background/60 p-3 text-xs transition-colors hover:bg-background"
+    >
+      {STATUS_ROWS.map((r) => {
+        const configured = sections?.find((s) => s.key === r.key)?.configured
+        return (
+          <div key={r.key} className="flex items-center justify-between">
+            <span className="text-muted-foreground">{r.label}</span>
+            <span className="flex items-center gap-1.5">
+              <span className={cn('size-1.5 rounded-full', configured ? 'bg-emerald-500' : 'bg-amber-500')} />
+              {configured === undefined ? '…' : configured ? '已配置' : '未配置'}
+            </span>
+          </div>
+        )
+      })}
+      {isDemo && <p className="border-t pt-2 text-[11px] text-muted-foreground">分区内容暂为演示数据</p>}
+    </Link>
   )
 }
 
@@ -238,7 +251,7 @@ function ThemeToggle() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuRadioGroup value={theme} onValueChange={setTheme}>
+        <DropdownMenuRadioGroup value={theme} onValueChange={(v) => setTheme(v as Theme)}>
           <DropdownMenuRadioItem value="light">
             <SunIcon />
             浅色

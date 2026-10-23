@@ -1,0 +1,29 @@
+# 服务器的 443 被其他服务占用，MindDock 在 8443 提供 HTTPS。
+# 证书用 HTTP-01 方式申请：宝塔 nginx 把 80 端口上的验证请求转发到本容器的 80（映射为宿主 127.0.0.1:8081）。
+{
+	http_port 80
+	https_port 8443
+	admin off
+}
+
+https://{$MINDDOCK_DOMAIN}:8443 {
+	tls {
+		issuer acme {
+			disable_tlsalpn_challenge
+		}
+	}
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		-Server
+	}
+
+	reverse_proxy panel:8080
+}

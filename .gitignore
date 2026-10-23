@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 server/data/
+/data/
 *.db
 *.db-shm
 *.db-wal

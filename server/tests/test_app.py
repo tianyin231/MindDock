@@ -14,7 +14,7 @@ def test_health_reports_schema_version(tmp_path):
         body = client.get("/api/health").json()
 
     assert body["status"] == "ok"
-    assert body["schema"] == 1
+    assert body["schema"] == 2
 
 
 def test_spa_fallback_serves_index_but_not_for_api(tmp_path):

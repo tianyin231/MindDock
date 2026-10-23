@@ -10,6 +10,7 @@ import { dayDiff, fullDate, greeting } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { LiveInbox } from './LiveInbox'
 import { PocketTiles } from './PocketTiles'
+import { SetupChecklist } from './SetupChecklist'
 
 export function OverviewPage() {
   return (
@@ -22,6 +23,8 @@ export function OverviewPage() {
             {fullDate()} · 发给 QQ 机器人的内容会自动归入下面的分区
           </p>
         </header>
+
+        <SetupChecklist />
 
         <PocketTiles />
 
