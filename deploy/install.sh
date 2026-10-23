@@ -70,6 +70,18 @@ for _ in $(seq 1 30); do
   sleep 2
 done
 
+say "等待面板启动"
+code=""
+for _ in $(seq 1 20); do
+  logs=$(docker compose logs panel 2>/dev/null || true)
+  code=$(grep -o '初始化码：[A-Z0-9-]*' <<<"$logs" | tail -1 || true)
+  if [ -n "$code" ] || grep -q "Application startup complete" <<<"$logs"; then
+    break
+  fi
+  sleep 2
+done
+
 say "完成：https://$DOMAIN:8443"
-code=$(docker compose logs panel 2>/dev/null | grep -o '初始化码：[A-Z0-9-]*' | tail -1 || true)
-[ -n "$code" ] && echo "首次打开面板时需要的 $code"
+if [ -n "$code" ]; then
+  echo "首次打开面板时需要的 $code"
+fi
