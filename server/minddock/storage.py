@@ -9,7 +9,9 @@
 import logging
 import os
 import re
+import shutil
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
@@ -106,6 +108,53 @@ def stats(conn: sqlite3.Connection, data_dir: Path) -> dict[str, Any]:
         "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM files WHERE local_path IS NOT NULL"
     ).fetchone()
     return {"counts": counts, "localFiles": local[0], "localBytes": local[1]}
+
+
+def cleanup_local(
+    conn: sqlite3.Connection,
+    data_dir: Path,
+    keep_days: int,
+    min_free_ratio: float,
+    disk_usage: Callable[[Path], Any] = shutil.disk_usage,
+) -> int:
+    """删除已确认上传的本地原件：超过保留天数的，以及磁盘紧张时最旧的。返回删除数量。
+
+    只处理 upload_status = 'uploaded' 的文件，未确认上传的原件绝不删除；缩略图保留。
+    """
+    removed = 0
+    expired = conn.execute(
+        "SELECT id, local_path FROM files WHERE upload_status = 'uploaded' "
+        "AND local_path IS NOT NULL AND uploaded_at < ? ORDER BY uploaded_at",
+        (now_iso(-keep_days * 86400),),
+    ).fetchall()
+    for row in expired:
+        removed += _drop_local(conn, data_dir, row["id"], row["local_path"])
+
+    def short_of_space() -> bool:
+        usage = disk_usage(data_dir)
+        return usage.free / usage.total < min_free_ratio
+
+    if short_of_space():
+        oldest = conn.execute(
+            "SELECT id, local_path FROM files WHERE upload_status = 'uploaded' "
+            "AND local_path IS NOT NULL ORDER BY uploaded_at"
+        ).fetchall()
+        for row in oldest:
+            if not short_of_space():
+                break
+            removed += _drop_local(conn, data_dir, row["id"], row["local_path"])
+    if removed:
+        log.info("已清理 %d 个已上传的本地原件", removed)
+    return removed
+
+
+def _drop_local(conn: sqlite3.Connection, data_dir: Path, file_id: str, local_path: str) -> int:
+    path = (data_dir / local_path).resolve()
+    if path.is_relative_to(data_dir.resolve()):
+        path.unlink(missing_ok=True)
+    conn.execute("UPDATE files SET local_path = NULL WHERE id = ?", (file_id,))
+    _changed(conn, file_id)
+    return 1
 
 
 def _changed(conn: sqlite3.Connection, file_id: str) -> None:

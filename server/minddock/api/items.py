@@ -2,14 +2,17 @@
 
 from pathlib import Path
 from typing import Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 
 from minddock import items as repo
 from minddock import reminders
 from minddock.api.deps import get_db, require_user
+from minddock.integrations.openlist import OpenListClient, OpenListError
 from minddock.jobs import retry_now
 from minddock.timeutil import to_utc_iso
 
@@ -107,23 +110,89 @@ async def retry(item_id: str, request: Request) -> dict:
     return {"status": "ok"}
 
 
+def _local(request: Request, relative: str | None) -> Path | None:
+    if not relative:
+        return None
+    data_dir: Path = request.app.state.config.data_dir.resolve()
+    path = (data_dir / relative).resolve()
+    return path if path.is_relative_to(data_dir) and path.is_file() else None
+
+
 @router.get("/files/{file_id}/raw")
-async def raw_file(file_id: str, request: Request, download: bool = False) -> FileResponse:
+async def raw_file(file_id: str, request: Request, download: bool = False) -> Response:
+    """原件：本地还在就直接返回，否则经 OpenList 从夸克取回（支持 Range，视频可拖动进度）。"""
     row = (
         get_db(request)
-        .execute("SELECT local_path, original_name, mime, kind FROM files WHERE id = ?", (file_id,))
+        .execute(
+            "SELECT local_path, original_name, mime, kind, remote_path FROM files WHERE id = ?",
+            (file_id,),
+        )
         .fetchone()
     )
-    if row is None or not row["local_path"]:
-        raise HTTPException(status_code=404, detail="文件不在本地（可能尚未下载完成）")
-    data_dir: Path = request.app.state.config.data_dir.resolve()
-    path = (data_dir / row["local_path"]).resolve()
-    if not path.is_relative_to(data_dir) or not path.is_file():
+    if row is None:
         raise HTTPException(status_code=404, detail="文件不存在")
     inline = not download and row["kind"] in ("image", "video", "audio")
+    name = row["original_name"] or file_id
+    if path := _local(request, row["local_path"]):
+        return FileResponse(
+            path,
+            media_type=row["mime"] or "application/octet-stream",
+            filename=name,
+            content_disposition_type="inline" if inline else "attachment",
+        )
+    if not row["remote_path"]:
+        raise HTTPException(status_code=404, detail="文件不在本地（可能尚未下载完成）")
+    return await _from_quark(request, row["remote_path"], row["mime"], name, inline)
+
+
+async def _from_quark(
+    request: Request, remote_path: str, mime: str | None, name: str, inline: bool
+) -> StreamingResponse:
+    config, http = request.app.state.config, request.app.state.http
+    client = OpenListClient(config.openlist_url, config.openlist_admin_password, http)
+    try:
+        await client.login()
+        info = await client.stat(remote_path)
+    except OpenListError as exc:
+        raise HTTPException(status_code=502, detail=f"从夸克取回失败：{exc}") from None
+    if not info or not info.get("raw_url"):
+        raise HTTPException(status_code=404, detail="夸克中找不到这个文件")
+
+    headers = {"Range": r} if (r := request.headers.get("range")) else {}
+    upstream = await http.send(
+        http.build_request("GET", info["raw_url"], headers=headers), stream=True
+    )
+    if upstream.status_code >= 400:
+        await upstream.aclose()
+        raise HTTPException(
+            status_code=502, detail=f"从夸克取回失败（HTTP {upstream.status_code}）"
+        )
+    passthrough = {
+        k: v
+        for k in ("content-length", "content-range", "accept-ranges")
+        if (v := upstream.headers.get(k))
+    }
+    disposition = "inline" if inline else "attachment"
+    passthrough["content-disposition"] = f"{disposition}; filename*=utf-8''{quote(name)}"
+    return StreamingResponse(
+        upstream.aiter_bytes(),
+        status_code=upstream.status_code,
+        media_type=mime or "application/octet-stream",
+        headers=passthrough,
+        background=BackgroundTask(upstream.aclose),
+    )
+
+
+@router.get("/files/{file_id}/thumb")
+async def thumb_file(file_id: str, request: Request) -> FileResponse:
+    row = (
+        get_db(request).execute("SELECT thumb_path FROM files WHERE id = ?", (file_id,)).fetchone()
+    )
+    path = _local(request, row["thumb_path"]) if row else None
+    if path is None:
+        raise HTTPException(status_code=404, detail="没有缩略图")
     return FileResponse(
         path,
-        media_type=row["mime"] or "application/octet-stream",
-        filename=row["original_name"] or path.name,
-        content_disposition_type="inline" if inline else "attachment",
+        media_type="image/webp",
+        headers={"Cache-Control": "private, max-age=31536000, immutable"},
     )

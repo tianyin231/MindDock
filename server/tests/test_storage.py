@@ -200,3 +200,129 @@ def test_storage_api(client, app):
     assert client.post("/api/files/nope/upload").status_code == 404
     db.execute("UPDATE files SET upload_status = 'failed' WHERE id = ?", (file_id,))
     assert client.post("/api/storage/retry").json()["requeued"] >= 1
+
+
+# ---- 缩略图 ----
+
+
+def test_thumbnails_are_small_webp(tmp_path):
+    from PIL import Image
+
+    from minddock.thumbs import ThumbnailError, make_thumbnail
+
+    src = tmp_path / "big.jpg"
+    Image.new("RGB", (2000, 1000), "orange").save(src)
+    make_thumbnail(src, tmp_path / "t" / "big.webp")
+    with Image.open(tmp_path / "t" / "big.webp") as thumb:
+        assert thumb.format == "WEBP" and thumb.size == (480, 240)
+
+    png = tmp_path / "alpha.png"
+    Image.new("RGBA", (100, 100), (0, 0, 0, 0)).save(png)
+    make_thumbnail(png, tmp_path / "alpha.webp")  # 小图不放大，保留透明
+    with Image.open(tmp_path / "alpha.webp") as thumb:
+        assert thumb.size == (100, 100) and thumb.mode == "RGBA"
+
+    bad = tmp_path / "bad.jpg"
+    bad.write_bytes(b"not an image")
+    with pytest.raises(ThumbnailError):
+        make_thumbnail(bad, tmp_path / "bad.webp")
+
+
+def test_worker_generates_thumbnail_once(conn, archiver):
+    from PIL import Image
+
+    from minddock.worker import Worker, enqueue_missing_thumbnails, handle_thumbnail
+
+    file_id = downloaded_file(conn, archiver.config.data_dir)
+    local = archiver.config.data_dir / file_row(conn, file_id)["local_path"]
+    Image.new("RGB", (800, 600), "teal").save(local, "JPEG")
+    worker = Worker(conn, archiver.store, None, archiver.config)
+
+    assert enqueue_missing_thumbnails(conn) == 1
+    asyncio.run(handle_thumbnail(worker, file_id))
+    row = file_row(conn, file_id)
+    assert row["thumb_path"].endswith(f"{file_id}.webp")
+    assert (archiver.config.data_dir / row["thumb_path"]).is_file()
+    assert enqueue_missing_thumbnails(conn) == 0
+
+
+# ---- 本地清理 ----
+
+
+class FakeDisk:
+    def __init__(self, conn):
+        self.conn = conn
+
+    def __call__(self, path):
+        # 每个本地文件占 10%，总量 100
+        used = self.conn.execute(
+            "SELECT COUNT(*) FROM files WHERE local_path IS NOT NULL"
+        ).fetchone()[0]
+        return type("Usage", (), {"total": 100, "free": 100 - used * 10 - 55})()
+
+
+def test_cleanup_only_removes_confirmed_uploads(conn, archiver):
+    data_dir = archiver.config.data_dir
+    old = downloaded_file(conn, data_dir, msg_id="a")
+    recent = downloaded_file(conn, data_dir, msg_id="b")
+    newest = downloaded_file(conn, data_dir, msg_id="c")
+    pending = downloaded_file(conn, data_dir, msg_id="d")
+    for file_id, age in ((old, 8 * 86400), (recent, 3 * 86400), (newest, 60)):
+        conn.execute(
+            "UPDATE files SET upload_status = 'uploaded', uploaded_at = ? WHERE id = ?",
+            (now_iso(-age), file_id),
+        )
+    old_path = data_dir / file_row(conn, old)["local_path"]
+
+    # 磁盘宽裕：只清理超过 7 天的
+    roomy = lambda path: type("Usage", (), {"total": 100, "free": 90})()  # noqa: E731
+    assert storage.cleanup_local(conn, data_dir, 7, 0.2, roomy) == 1
+    assert not old_path.exists() and file_row(conn, old)["local_path"] is None
+
+    # 磁盘紧张：从最旧的已上传文件开始清理，直到空间够用；未上传的绝不删除
+    assert storage.cleanup_local(conn, data_dir, 7, 0.2, FakeDisk(conn)) == 1
+    assert file_row(conn, recent)["local_path"] is None
+    assert file_row(conn, newest)["local_path"] is not None
+    assert file_row(conn, pending)["local_path"] is not None
+
+
+# ---- 下载 ----
+
+
+def test_download_falls_back_to_quark_and_thumbs_are_served(client, app):
+    import httpx2
+
+    setup_account(client, app)
+    db, data_dir = app.state.db, app.state.config.data_dir
+    file_id = downloaded_file(db, data_dir)
+    db.execute(
+        "UPDATE files SET local_path = NULL, upload_status = 'uploaded', remote_path = ? WHERE id = ?",
+        ("/quark/MindDock/originals/2026/10/x.jpg", file_id),
+    )
+
+    def openlist(req: httpx2.Request) -> httpx2.Response:
+        if req.url.path == "/api/auth/login":
+            return httpx2.Response(200, json={"code": 200, "data": {"token": "t"}})
+        if req.url.path == "/api/fs/get":
+            raw = "http://openlist:5244/p/quark/x.jpg?sign=s"
+            return httpx2.Response(200, json={"code": 200, "data": {"raw_url": raw}})
+        assert req.headers["range"] == "bytes=0-3"
+        return httpx2.Response(206, content=b"JPEG", headers={"content-range": "bytes 0-3/8"})
+
+    app.state.config.openlist_admin_password = "pw"
+    app.state.http = httpx2.AsyncClient(transport=httpx2.MockTransport(openlist))
+    item = client.get(f"/api/items/{db.execute('SELECT item_id FROM files').fetchone()[0]}").json()
+    assert item["attachments"][0]["downloadUrl"] == f"/api/files/{file_id}/raw?download=1"
+
+    resp = client.get(f"/api/files/{file_id}/raw?download=1", headers={"Range": "bytes=0-3"})
+    assert resp.status_code == 206 and resp.content == b"JPEG"
+    assert resp.headers["content-range"] == "bytes 0-3/8"
+    assert resp.headers["content-disposition"].startswith("attachment;")
+
+    assert client.get(f"/api/files/{file_id}/thumb").status_code == 404
+    thumb = data_dir / "thumbs" / "t.webp"
+    thumb.parent.mkdir(parents=True)
+    thumb.write_bytes(b"RIFF")
+    db.execute("UPDATE files SET thumb_path = 'thumbs/t.webp' WHERE id = ?", (file_id,))
+    resp = client.get(f"/api/files/{file_id}/thumb")
+    assert resp.status_code == 200 and "immutable" in resp.headers["cache-control"]

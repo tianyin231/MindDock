@@ -88,10 +88,16 @@ def item_to_api(conn: sqlite3.Connection, item_id: str) -> dict[str, Any] | None
                 "uploadError": upload_error,
                 "hue": _hue(f["id"]),
                 "durationSec": meta.get("duration"),
-                "previewUrl": f"/api/files/{f['id']}/raw"
+                # 优先用缩略图；本地原件清理后，下载改为经 OpenList 从夸克取回
+                "previewUrl": f"/api/files/{f['id']}/thumb"
+                if f["thumb_path"]
+                else f"/api/files/{f['id']}/raw"
                 if local and f["kind"] == "image"
                 else None,
-                "downloadUrl": f"/api/files/{f['id']}/raw?download=1" if local else None,
+                "downloadUrl": f"/api/files/{f['id']}/raw?download=1"
+                if local or f["remote_path"]
+                else None,
+                "local": local,
             }
         )
 

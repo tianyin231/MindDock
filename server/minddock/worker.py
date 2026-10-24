@@ -19,7 +19,8 @@ from minddock.notify import Notifier
 from minddock.organize import AIError, organize_item
 from minddock.qq.replies import prune_inbound
 from minddock.settings_store import SettingsStore
-from minddock.storage import Archiver, enqueue_pending
+from minddock.storage import Archiver, cleanup_local, enqueue_pending
+from minddock.thumbs import ThumbnailError, make_thumbnail, thumb_path_for
 from minddock.util import emit, prune_events
 
 log = logging.getLogger(__name__)
@@ -91,8 +92,15 @@ class Worker:
             try:
                 prune_events(self.conn)
                 prune_inbound(self.conn)
+                enqueue_missing_thumbnails(self.conn)
                 if self.store.configured("storage"):
                     enqueue_pending(self.conn)
+                cleanup_local(
+                    self.conn,
+                    self.config.data_dir,
+                    self.config.staging_keep_days,
+                    self.config.min_free_ratio,
+                )
             except Exception:
                 log.exception("例行维护出错")
             await asyncio.sleep(600)
@@ -151,6 +159,8 @@ async def handle_download(worker: Worker, file_id: str) -> None:
         "UPDATE files SET sha256 = ?, size = ?, mime = ?, local_path = ? WHERE id = ?",
         (digest.hexdigest(), size, mime, relative.as_posix(), file_id),
     )
+    if row["kind"] == "image":
+        enqueue(worker.conn, "thumbnail", file_id)
     if worker.store.configured("storage"):
         enqueue(worker.conn, "upload", file_id)
     if item := item_to_api(worker.conn, row["item_id"]):
@@ -159,6 +169,40 @@ async def handle_download(worker: Worker, file_id: str) -> None:
 
 async def handle_upload(worker: Worker, file_id: str) -> None:
     await worker.archiver.upload(file_id)
+
+
+async def handle_thumbnail(worker: Worker, file_id: str) -> None:
+    row = worker.conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
+    if row is None or row["kind"] != "image" or row["thumb_path"] or not row["local_path"]:
+        return
+    relative = thumb_path_for(file_id, row["created_at"])
+    try:
+        await asyncio.to_thread(
+            make_thumbnail,
+            worker.config.data_dir / row["local_path"],
+            worker.config.data_dir / relative,
+        )
+    except ThumbnailError as exc:
+        # 无法识别的格式（如 HEIC）或超大图片：不再重试，面板用占位图
+        log.info("文件 %s 无法生成缩略图：%s", file_id, exc)
+        return
+    worker.conn.execute(
+        "UPDATE files SET thumb_path = ? WHERE id = ?", (relative.as_posix(), file_id)
+    )
+    if item := item_to_api(worker.conn, row["item_id"]):
+        emit(worker.conn, "item.updated", {"item": item})
+
+
+def enqueue_missing_thumbnails(conn: sqlite3.Connection) -> int:
+    """补生成缩略图：本地还有原件、没有缩略图、也从没尝试过的图片。"""
+    rows = conn.execute(
+        "SELECT f.id FROM files f WHERE f.kind = 'image' AND f.thumb_path IS NULL "
+        "AND f.local_path IS NOT NULL AND NOT EXISTS (SELECT 1 FROM jobs j "
+        "WHERE j.type = 'thumbnail' AND j.ref_id = f.id)"
+    ).fetchall()
+    for row in rows:
+        enqueue(conn, "thumbnail", row[0])
+    return len(rows)
 
 
 async def handle_remind(worker: Worker, reminder_id: str) -> None:
@@ -172,4 +216,5 @@ HANDLERS: dict[str, Callable[[Worker, str], Awaitable[None]]] = {
     "download": handle_download,
     "remind": handle_remind,
     "upload": handle_upload,
+    "thumbnail": handle_thumbnail,
 }

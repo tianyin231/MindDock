@@ -7,6 +7,7 @@ dependencies = [
     "argon2-cffi>=25.1.0",
     "fastapi>=0.161.1",
     "httpx2>=2.16.0",
+    "pillow>=12.3,<13",
     "pydantic-settings>=2.16.1",
     "pynacl>=1.6.2",
     "pyotp>=2.10.0",
