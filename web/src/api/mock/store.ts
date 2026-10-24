@@ -2,15 +2,31 @@
  * 内存版后端：在接入真实接口之前，用来驱动整个前端和归类动画。
  * 行为对齐设计文档：新消息先进"处理中"，AI 归类后进入分区；密钥在收件时直接分流。
  */
-import type { Counts, Item, ItemPartition, LiveEvent, ReminderAction, Secret } from '../types'
+import type {
+  Counts,
+  Item,
+  ItemPartition,
+  LiveEvent,
+  ReminderAction,
+  Secret,
+  VaultKeysData,
+  VaultRewrapBody,
+  VaultSetupBody,
+} from '../types'
 import { INCOMING, makeCode, makeId, seedItems, seedSecrets } from './seed'
 
 const items = new Map<string, Item>(seedItems().map((i) => [i.id, i]))
+
+// 密钥库：和真实后端一样只保存公钥、包裹后的私钥和密文，加解密都在页面里完成。
+// 演示开始时尚未启用；启用后把示例密钥加密存入，相当于此前收到的消息
+let vault: VaultKeysData | null = null
 const secrets: Secret[] = []
-const secretValues = new Map<string, string>()
-for (const { secret, value } of seedSecrets()) {
-  secrets.push(secret)
-  secretValues.set(secret.id, value)
+const challenges = new Map<string, string>()
+
+async function sealForVault(value: string): Promise<string> {
+  const crypto = await import('@/lib/vault-crypto')
+  await crypto.ready()
+  return crypto.sealText(value, crypto.fromB64(vault!.publicKey))
 }
 
 const listeners = new Set<(e: LiveEvent) => void>()
@@ -48,11 +64,15 @@ function simulateIncoming(): void {
   const now = new Date().toISOString()
 
   if (tpl.secret) {
-    // 密钥在收件阶段就被识别并加密，不经过 AI
-    const secret: Secret = { id: makeId(), code: makeCode(), label: tpl.secret.label, kind: 'text', createdAt: now }
-    secrets.unshift(secret)
-    secretValues.set(secret.id, tpl.secret.value)
-    emit({ type: 'secret.stored', secret })
+    // 密钥在收件阶段就被识别并加密，不经过 AI；密钥库未启用时不保存
+    const { label, value } = tpl.secret
+    if (vault) {
+      void sealForVault(value).then((sealed) => {
+        const secret: Secret = { id: makeId(), code: makeCode(), label, kind: 'text', createdAt: now, sealed }
+        secrets.unshift(secret)
+        emit({ type: 'secret.stored', secret })
+      })
+    }
     return
   }
 
@@ -213,16 +233,83 @@ export const mockBackend = {
     }, 1800)
   },
 
+  async vaultState() {
+    await latency()
+    return { initialized: vault !== null, publicKey: vault?.publicKey ?? null }
+  },
+
+  async vaultSetup(body: VaultSetupBody) {
+    await latency(200)
+    if (vault) throw new Error('密钥库已经启用过了')
+    vault = { publicKey: body.public_key, password: body.password, recovery: body.recovery }
+    for (const { secret, value } of seedSecrets()) secrets.push({ ...secret, sealed: await sealForVault(value) })
+    return { initialized: true, publicKey: vault.publicKey }
+  },
+
+  async vaultKeys() {
+    await latency()
+    if (!vault) throw new Error('密钥库尚未启用')
+    return clone(vault)
+  },
+
+  async vaultChallenge() {
+    await latency()
+    const token = makeId()
+    const answer = makeId()
+    challenges.set(token, btoa(answer))
+    return { token, sealed: await sealForVault(answer) }
+  },
+
+  async vaultRewrap(body: VaultRewrapBody) {
+    await latency(200)
+    const expected = challenges.get(body.token)
+    challenges.delete(body.token)
+    if (!vault || expected !== body.answer) throw new Error('验证失败，请重新解锁后再试')
+    vault.password = body.password
+    if (body.recovery) vault.recovery = body.recovery
+  },
+
   async listSecrets(): Promise<Secret[]> {
     await latency()
     return clone(secrets)
   },
 
-  /** 演示版：真实实现会在浏览器内用二级密码解开私钥，再逐条解密 */
-  async unlockVault(password: string): Promise<Record<string, string>> {
-    await latency(700)
-    if (!password) throw new Error('请输入二级密码')
-    return Object.fromEntries(secretValues)
+  async secretBlob(): Promise<Uint8Array> {
+    throw new Error('演示数据里没有附件类密钥')
+  },
+
+  async addSecret(label: string, sealed: string): Promise<Secret> {
+    await latency(80)
+    const secret: Secret = { id: makeId(), code: makeCode(), label, kind: 'text', createdAt: new Date().toISOString(), source: 'panel', sealed }
+    secrets.unshift(secret)
+    return clone(secret)
+  },
+
+  async deleteSecret(id: string): Promise<void> {
+    await latency(80)
+    const index = secrets.findIndex((x) => x.id === id)
+    if (index >= 0) secrets.splice(index, 1)
+  },
+
+  async releaseSecret(id: string, text: string): Promise<Item> {
+    await latency(80)
+    const index = secrets.findIndex((x) => x.id === id)
+    if (index >= 0) secrets.splice(index, 1)
+    const title = text.split('\n')[0].slice(0, 40)
+    const created: Item = {
+      id: makeId(),
+      code: makeCode(),
+      source: 'panel',
+      partition: 'note',
+      partitionSource: 'auto',
+      text,
+      title,
+      tags: [],
+      createdAt: new Date().toISOString(),
+      attachments: [],
+    }
+    items.set(created.id, created)
+    return clone(created)
   },
 
   subscribe(listener: (e: LiveEvent) => void): () => void {

@@ -8,6 +8,7 @@ export const qk = {
   item: (id: string) => ['item', id] as const,
   search: (q: string) => ['search', q] as const,
   secrets: ['secrets'] as const,
+  vault: ['vault'] as const,
 }
 
 export function useCounts() {
@@ -37,6 +38,10 @@ export function useSearch(q: string) {
 
 export function useSecrets() {
   return useQuery({ queryKey: qk.secrets, queryFn: () => api.listSecrets() })
+}
+
+export function useVaultState() {
+  return useQuery({ queryKey: qk.vault, queryFn: () => api.vaultState() })
 }
 
 export function useToggleTodo() {

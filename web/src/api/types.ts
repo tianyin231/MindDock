@@ -71,9 +71,49 @@ export interface Item {
 export interface Secret {
   id: string
   code: string
+  /** 名称是明文，内容才加密 */
   label: string
   kind: 'text' | 'file'
   createdAt: string
+  /** 明文大小（字节） */
+  size?: number | null
+  originalName?: string | null
+  mime?: string | null
+  source?: 'qq' | 'panel'
+  /** 自动识别的原因；显式 #key 为空 */
+  detected?: string | null
+  /** 文本密钥的密文（Base64 sealed box），解锁后在浏览器里打开 */
+  sealed?: string | null
+}
+
+export interface VaultState {
+  initialized: boolean
+  publicKey: string | null
+}
+
+export interface WrapData {
+  wrapped: string
+  salt: string
+  params: { alg: 'argon2id13'; ops: number; mem: number }
+}
+
+export interface VaultKeysData {
+  publicKey: string
+  password: WrapData
+  recovery: WrapData
+}
+
+export interface VaultSetupBody {
+  public_key: string
+  password: WrapData
+  recovery: WrapData
+}
+
+export interface VaultRewrapBody {
+  token: string
+  answer: string
+  password: WrapData
+  recovery?: WrapData
 }
 
 export type Counts = Record<PartitionKey, number>

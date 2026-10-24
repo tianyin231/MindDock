@@ -1,6 +1,17 @@
 import type { Api } from './client'
 import { ApiError, http } from './http'
-import type { Counts, Item, ItemPartition, LiveEvent, ReminderAction, Secret } from './types'
+import type {
+  Counts,
+  Item,
+  ItemPartition,
+  LiveEvent,
+  ReminderAction,
+  Secret,
+  VaultKeysData,
+  VaultRewrapBody,
+  VaultSetupBody,
+  VaultState,
+} from './types'
 
 /** 真实后端：JSON 接口 + SSE 实时事件 */
 export const httpBackend: Api = {
@@ -19,10 +30,25 @@ export const httpBackend: Api = {
   retryItem: async (id: string) => {
     await http.post(`/api/items/${id}/retry`)
   },
-  listSecrets: () => http.get<Secret[]>('/api/secrets'),
-  unlockVault: async () => {
-    throw new Error('密钥库将在下一个版本启用')
+  vaultState: () => http.get<VaultState>('/api/vault'),
+  vaultSetup: (body: VaultSetupBody) => http.post<VaultState>('/api/vault/setup', body),
+  vaultKeys: () => http.get<VaultKeysData>('/api/vault/keys'),
+  vaultChallenge: () => http.post<{ token: string; sealed: string }>('/api/vault/challenge'),
+  vaultRewrap: async (body: VaultRewrapBody) => {
+    await http.put('/api/vault/keys', body)
   },
+  listSecrets: () => http.get<Secret[]>('/api/secrets'),
+  secretBlob: async (id: string) => {
+    const resp = await fetch(`/api/secrets/${encodeURIComponent(id)}/blob`, { credentials: 'same-origin' })
+    if (!resp.ok) throw new ApiError(resp.status, '读取密文失败')
+    return new Uint8Array(await resp.arrayBuffer())
+  },
+  addSecret: (label: string, sealed: string) => http.post<Secret>('/api/secrets', { label, sealed }),
+  deleteSecret: async (id: string) => {
+    await http.delete(`/api/secrets/${encodeURIComponent(id)}`)
+  },
+  releaseSecret: (id: string, text: string) =>
+    http.post<Item>(`/api/secrets/${encodeURIComponent(id)}/release`, { text }),
   subscribe(listener: (e: LiveEvent) => void) {
     // EventSource 断线后会按服务端给的 retry 自动重连，并带上 Last-Event-ID
     const source = new EventSource('/api/events')
