@@ -15,8 +15,12 @@ export interface Attachment {
   durationSec?: number | null
   /** 图片已下载到服务器时的预览地址 */
   previewUrl?: string | null
-  /** 原件已在服务器时的下载地址 */
+  /** 原件下载地址：本地还在就直接下载，否则经 OpenList 从夸克取回 */
   downloadUrl?: string | null
+  /** 原件是否还在服务器本地（上传后保留几天） */
+  local?: boolean
+  /** 上传失败的原因 */
+  uploadError?: string | null
 }
 
 export interface LinkInfo {

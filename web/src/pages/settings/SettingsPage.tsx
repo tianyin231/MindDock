@@ -36,6 +36,7 @@ import { Switch } from '@/components/ui/switch'
 import { relativeTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { QQBinding } from './QQBinding'
+import { StorageStatus } from './StorageStatus'
 
 const SECTION_ICON: Record<string, LucideIcon> = {
   qq: BotIcon,
@@ -62,7 +63,11 @@ export function SettingsPage() {
       {isLoading || !sections
         ? Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-56 rounded-2xl" />)
         : sections.map((s) => (
-            <SectionCard key={s.key} section={s} extra={s.key === 'qq' ? <QQBinding /> : null} />
+            <SectionCard
+              key={s.key}
+              section={s}
+              extra={s.key === 'qq' ? <QQBinding /> : s.key === 'storage' ? <StorageStatus /> : null}
+            />
           ))}
 
       <AccountCard />

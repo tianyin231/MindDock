@@ -18,6 +18,7 @@ import { useCounts } from '@/api/hooks'
 import { useQQ } from '@/api/qq'
 import { useSettings } from '@/api/settings'
 import { AnimatedCount, Logo } from '@/components/common'
+import { StorageBanner } from '@/components/layout/StorageBanner'
 import { ItemSheet } from '@/components/ItemSheet'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -43,6 +44,7 @@ export function AppShell() {
       <div className="lg:pl-64">
         <TopBar />
         <main className="mx-auto max-w-7xl px-4 pt-5 pb-28 sm:px-6 lg:px-8 lg:pb-12">
+          <StorageBanner />
           <Outlet />
         </main>
       </div>

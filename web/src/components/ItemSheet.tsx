@@ -1,17 +1,26 @@
-import { CalendarIcon, ExternalLinkIcon, Loader2Icon, RotateCwIcon, SparklesIcon, TriangleAlertIcon } from 'lucide-react'
+import {
+  CalendarIcon,
+  DownloadIcon,
+  ExternalLinkIcon,
+  Loader2Icon,
+  RotateCwIcon,
+  SparklesIcon,
+  TriangleAlertIcon,
+} from 'lucide-react'
 import { useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { useItem, useMoveItem, useRetryItem, useToggleTodo } from '@/api/hooks'
-import type { Item, ItemPartition } from '@/api/types'
+import { useRetryUpload } from '@/api/storage'
+import type { Attachment, Item, ItemPartition } from '@/api/types'
 import { PartitionBadge, TagList } from '@/components/common'
-import { AttachmentRow } from '@/components/items'
+import { Thumb, UploadStatus } from '@/components/items'
 import { ReminderControls } from '@/components/ReminderControls'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
-import { dueLabel, hm, monthDay, relativeTime } from '@/lib/format'
+import { dueLabel, fileSize, hm, monthDay, relativeTime } from '@/lib/format'
 import { ITEM_PARAM } from '@/lib/open-item'
 import { MOVABLE_PARTITIONS, PARTITION } from '@/lib/partitions'
 
@@ -141,9 +150,9 @@ function ItemDetail({ item }: { item: Item }) {
 
         {item.attachments.length > 0 && (
           <Field label="附件">
-            <div className="rounded-lg border p-1">
+            <div className="divide-y rounded-lg border">
               {item.attachments.map((att) => (
-                <AttachmentRow key={att.id} att={att} />
+                <AttachmentDetail key={att.id} att={att} />
               ))}
             </div>
           </Field>
@@ -191,5 +200,55 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <h3 className="text-xs font-medium text-muted-foreground">{label}</h3>
       {children}
     </section>
+  )
+}
+
+/** 详情里的附件：上传状态、失败原因与重新上传、查看与下载原件 */
+function AttachmentDetail({ att }: { att: Attachment }) {
+  const retry = useRetryUpload()
+  const viewUrl = att.downloadUrl?.replace(/\?download=1$/, '')
+  const thumb = <Thumb att={att} className="size-12 shrink-0" />
+  return (
+    <div className="flex items-center gap-3 p-2">
+      {viewUrl && att.kind !== 'file' ? (
+        <a href={viewUrl} target="_blank" rel="noreferrer" title="查看原件">
+          {thumb}
+        </a>
+      ) : (
+        thumb
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium">{att.name}</p>
+        <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+          {att.size ? fileSize(att.size) : '下载中…'}
+          <UploadStatus status={att.uploadStatus} />
+          {att.uploadStatus === 'uploaded' && !att.local && <span>本地已清理</span>}
+        </p>
+        {att.uploadError && <p className="text-xs break-words text-destructive">{att.uploadError}</p>}
+      </div>
+      {att.uploadStatus === 'failed' && (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={retry.isPending}
+          onClick={() =>
+            retry.mutate(att.id, {
+              onSuccess: () => toast.success('已重新排队上传'),
+              onError: (err) => toast.error(err.message),
+            })
+          }
+        >
+          <RotateCwIcon />
+          重新上传
+        </Button>
+      )}
+      {att.downloadUrl && (
+        <Button asChild size="icon-sm" variant="ghost">
+          <a href={att.downloadUrl} title="下载原件" aria-label="下载原件">
+            <DownloadIcon />
+          </a>
+        </Button>
+      )}
+    </div>
   )
 }
