@@ -127,9 +127,3 @@ async def raw_file(file_id: str, request: Request, download: bool = False) -> Fi
         filename=row["original_name"] or path.name,
         content_disposition_type="inline" if inline else "attachment",
     )
-
-
-@router.get("/secrets")
-async def list_secrets() -> list[dict]:
-    # 密钥库在下一个版本启用
-    return []

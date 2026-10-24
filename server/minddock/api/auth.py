@@ -21,6 +21,7 @@ from minddock.api.deps import (
     DEVICE_COOKIE,
     SESSION_COOKIE,
     CurrentUser,
+    client_ip,
     current_user,
     get_config,
     get_db,
@@ -117,12 +118,8 @@ def _state(request: Request) -> AuthState:
     return request.app.state.auth
 
 
-def _client_key(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
-
-
 def _guard(request: Request) -> str:
-    key = _client_key(request)
+    key = client_ip(request)
     wait = _state(request).limiter.retry_after(key)
     if wait:
         raise HTTPException(
@@ -170,7 +167,7 @@ def _start_session(request: Request, response: Response, user_id: int, trust_dev
             token_hash(token),
             user_id,
             now_iso(),
-            _client_key(request),
+            client_ip(request),
             ua,
             now_iso(),
             now_iso(),
@@ -189,7 +186,7 @@ def _start_session(request: Request, response: Response, user_id: int, trust_dev
         _set_cookie(request, response, DEVICE_COOKIE, device, DEVICE_TTL)
     db.execute(
         "INSERT INTO audit_log (at, action, target, ip) VALUES (?, 'login', ?, ?)",
-        (now_iso(), str(user_id), _client_key(request)),
+        (now_iso(), str(user_id), client_ip(request)),
     )
 
 

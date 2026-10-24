@@ -28,6 +28,10 @@ def get_config(request: Request) -> Settings:
     return request.app.state.config
 
 
+def client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
 def current_user(request: Request) -> CurrentUser | None:
     token = request.cookies.get(SESSION_COOKIE)
     if not token:

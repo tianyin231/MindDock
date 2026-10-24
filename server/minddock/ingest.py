@@ -27,7 +27,7 @@ class IncomingAttachment:
 
 @dataclass
 class Incoming:
-    msg_id: str
+    msg_id: str | None  # 面板提交的内容没有 QQ 消息 ID
     openid: str
     content: str
     attachments: list[IncomingAttachment] = field(default_factory=list)
@@ -52,9 +52,12 @@ def attachment_kind(content_type: str, filename: str) -> str:
     return "file"
 
 
-def ingest(conn: sqlite3.Connection, msg: Incoming) -> IngestResult | None:
+def ingest(conn: sqlite3.Connection, msg: Incoming, source: str = "qq") -> IngestResult | None:
     """返回 None 表示这条消息已处理过（QQ 重连后可能重复投递）。"""
-    if conn.execute("SELECT 1 FROM items WHERE source_msg_id = ?", (msg.msg_id,)).fetchone():
+    if (
+        msg.msg_id
+        and conn.execute("SELECT 1 FROM items WHERE source_msg_id = ?", (msg.msg_id,)).fetchone()
+    ):
         return None
 
     text = msg.content.strip()
@@ -76,10 +79,11 @@ def ingest(conn: sqlite3.Connection, msg: Incoming) -> IngestResult | None:
     try:
         conn.execute(
             "INSERT INTO items (id, short_code, source, source_msg_id, kind, text, user_tags, no_ai, "
-            "created_at, updated_at) VALUES (?, ?, 'qq', ?, ?, ?, ?, ?, ?, ?)",
+            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 item_id,
                 code,
+                source,
                 msg.msg_id,
                 kind,
                 text,

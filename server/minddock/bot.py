@@ -13,6 +13,7 @@ from typing import Any
 
 import httpx2
 
+from minddock import vault
 from minddock.commands import handle_command
 from minddock.config import Settings
 from minddock.db import now_iso
@@ -20,7 +21,7 @@ from minddock.ingest import Incoming, IncomingAttachment, ingest
 from minddock.qq.api import QQApi, QQError
 from minddock.qq.gateway import Gateway
 from minddock.qq.replies import next_reply_seq, record_inbound
-from minddock.secret_rules import detect_secret
+from minddock.secret_rules import EXPLICIT_REASON, detect_secret
 from minddock.settings_store import SettingsStore
 from minddock.util import emit, kv_delete, kv_get, kv_set
 
@@ -146,14 +147,10 @@ class Bot:
             await self.reply(msg, handle_command(self.conn, text, self.config.tz))
             return
 
-        # 密钥在任何内容落盘之前分流；密钥库上线前不保存，提醒撤回
+        # 密钥在任何内容落盘之前分流：加密后进密钥库，不进普通条目、不交给 AI
         reason = detect_secret(text)
         if reason:
-            await self.reply(
-                msg,
-                f"🔒 这条消息{reason}，已按密钥处理：密钥库将在下一个版本上线，这条没有保存。"
-                "建议在 2 分钟内撤回原消息。",
-            )
+            await self._store_secret(msg, reason)
             return
 
         result = ingest(self.conn, msg)
@@ -161,6 +158,84 @@ class Bot:
             return
         tail = "，正在整理" if result.organizing else "，按要求不交给 AI 整理"
         await self.reply(msg, f"✅ #{result.code} 已收：{result.summary}{tail}")
+
+    async def _store_secret(self, msg: Incoming, reason: str) -> None:
+        pk = vault.public_key(self.conn)
+        if pk is None:
+            await self.reply(
+                msg,
+                f"🔒 这条消息{reason}，按密钥处理：密钥库还没启用（在面板「密钥」页设置二级密码即可），"
+                "这条没有保存。建议 2 分钟内撤回原消息。",
+            )
+            return
+        if self.conn.execute(
+            "SELECT 1 FROM secrets WHERE source_msg_id = ?", (msg.msg_id,)
+        ).fetchone():
+            return  # 重复投递
+
+        detected = None if reason == EXPLICIT_REASON else reason
+        label, content = vault.split_message(msg.content, bool(msg.attachments), detected)
+        if not content and not msg.attachments:
+            await self.reply(msg, "🔒 没有找到要保存的内容。写法：#key 名称，换行后写内容")
+            return
+
+        stored, problems = [], []
+        if content:
+            try:
+                stored.append(
+                    vault.store_text(
+                        self.conn, pk, label, content, msg_id=msg.msg_id, detected=detected
+                    )
+                )
+            except vault.VaultError as exc:
+                problems.append(str(exc))
+        single = not content and len(msg.attachments) == 1
+        for i, att in enumerate(msg.attachments, 1):
+            try:
+                data = await self._download_secret(att)
+                stored.append(
+                    vault.store_file(
+                        self.conn,
+                        self.config.data_dir,
+                        pk,
+                        label if single else f"{label}（附件 {i}）",
+                        data,
+                        original_name=att.filename or None,
+                        mime=att.content_type if "/" in att.content_type else None,
+                        msg_id=msg.msg_id,
+                        detected=detected,
+                    )
+                )
+            except (vault.VaultError, httpx2.HTTPError, RuntimeError) as exc:
+                problems.append(f"附件 {i} 没有保存：{exc}")
+
+        codes = "、".join(f"#{s['code']}" for s in stored)
+        lines = [
+            f"🔒 已加密存入密钥库：{codes}（{label}）"
+            if stored
+            else "🔒 按密钥处理，但没有保存成功"
+        ]
+        if detected:
+            lines.append(f"自动识别：{reason}。如果不是密钥，可以在面板里移出")
+        lines += problems
+        lines.append("建议 2 分钟内撤回原消息，减少聊天记录里的明文")
+        await self.reply(msg, "\n".join(lines))
+        log.info("密钥已入库：%s", codes or "无")
+
+    async def _download_secret(self, att: IncomingAttachment) -> bytes:
+        """密钥附件只在内存里下载和加密，明文不落盘。"""
+        if att.size and att.size > vault.MAX_FILE:
+            raise vault.VaultError("超过 20 MB")
+        chunks, total = [], 0
+        async with self.http.stream("GET", att.url, timeout=httpx2.Timeout(30, read=60)) as resp:
+            if resp.status_code != 200:
+                raise RuntimeError(f"下载失败（HTTP {resp.status_code}）")
+            async for chunk in resp.aiter_bytes():
+                total += len(chunk)
+                if total > vault.MAX_FILE:
+                    raise vault.VaultError("超过 20 MB")
+                chunks.append(chunk)
+        return b"".join(chunks)
 
     async def _try_bind(self, msg: Incoming) -> None:
         match = BIND_RE.match(msg.content.strip())

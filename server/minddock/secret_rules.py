@@ -21,6 +21,7 @@ _RULES = [
     ),
 ]
 _EXPLICIT = re.compile(r"(?i)^\s*#key(?:\s|$)")
+EXPLICIT_REASON = "带有 #key 标记"
 
 
 def _looks_random(token: str) -> bool:
@@ -44,7 +45,7 @@ def _looks_random(token: str) -> bool:
 def detect_secret(text: str) -> str | None:
     """返回判定原因；不是密钥时返回 None。"""
     if _EXPLICIT.match(text):
-        return "带有 #key 标记"
+        return EXPLICIT_REASON
     for reason, pattern in _RULES:
         if pattern.search(text):
             return reason

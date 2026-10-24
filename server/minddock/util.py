@@ -23,13 +23,25 @@ def new_id() -> str:
     return "".join(reversed(chars))
 
 
-def new_code(conn: sqlite3.Connection, table: str = "items") -> str:
-    """回执里的短编号，如 A3F9；撞号时重试，太挤了就加长一位。"""
+def new_code(conn: sqlite3.Connection) -> str:
+    """回执里的短编号，如 A3F9，条目和密钥共用一套；撞号时重试，太挤了就加长一位。"""
     for attempt in range(20):
         code = "".join(secrets.choice(_CODE_CHARS) for _ in range(4 if attempt < 10 else 5))
-        if not conn.execute(f"SELECT 1 FROM {table} WHERE short_code = ?", (code,)).fetchone():
+        taken = conn.execute(
+            "SELECT 1 FROM items WHERE short_code = ? UNION ALL "
+            "SELECT 1 FROM secrets WHERE short_code = ?",
+            (code, code),
+        ).fetchone()
+        if not taken:
             return code
     raise RuntimeError("无法生成不重复的编号")
+
+
+def audit(conn: sqlite3.Connection, action: str, target: str | None, ip: str | None) -> None:
+    conn.execute(
+        "INSERT INTO audit_log (at, action, target, ip) VALUES (?, ?, ?, ?)",
+        (now_iso(), action, target, ip),
+    )
 
 
 def kv_get(conn: sqlite3.Connection, key: str, default: Any = None) -> Any:

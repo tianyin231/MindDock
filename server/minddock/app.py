@@ -10,9 +10,11 @@ from fastapi.staticfiles import StaticFiles
 
 from minddock import __version__
 from minddock.api import auth, items, live, qq, settings
+from minddock.api import vault as vault_api
 from minddock.config import Settings, get_settings
 from minddock.db import connect, migrate
 from minddock.security import load_cipher
+from minddock.vault import Challenges
 
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -28,6 +30,7 @@ def create_app(config: Settings | None = None) -> FastAPI:
         app.state.config = config
         app.state.cipher = load_cipher(config.secret_key, config.data_dir)
         app.state.auth = auth.init_auth_state(conn)
+        app.state.vault_challenges = Challenges()
         async with httpx2.AsyncClient(timeout=20, follow_redirects=True) as http:
             app.state.http = http
             try:
@@ -63,7 +66,7 @@ def create_app(config: Settings | None = None) -> FastAPI:
             "schema": schema,
         }
 
-    for module in (auth, settings, items, live, qq):
+    for module in (auth, settings, items, live, qq, vault_api):
         app.include_router(module.router)
     _mount_web(app, config.web_dist_dir)
     return app
