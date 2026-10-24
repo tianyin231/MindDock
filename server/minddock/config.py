@@ -33,6 +33,9 @@ class Settings(BaseSettings):
 
     openlist_url: str = "http://openlist:5244"
     openlist_admin_password: str = ""
+    # 原件上传夸克后在本地保留的天数；磁盘可用空间低于 min_free_ratio 时提前清理最旧的
+    staging_keep_days: int = 7
+    min_free_ratio: float = 0.2
 
     # 由镜像构建时写入
     version: str = "dev"

@@ -67,6 +67,16 @@ def item_to_api(conn: sqlite3.Connection, item_id: str) -> dict[str, Any] | None
     for f in files:
         meta = json.loads(f["meta"] or "{}")
         local = bool(f["local_path"])
+        upload_error = None
+        if f["upload_status"] == "failed":
+            job = conn.execute(
+                "SELECT status, last_error FROM jobs WHERE type = 'upload' AND ref_id = ? "
+                "ORDER BY id DESC LIMIT 1",
+                (f["id"],),
+            ).fetchone()
+            if job and job["last_error"]:
+                retrying = "稍后自动重试" if job["status"] == "failed" else "已停止自动重试"
+                upload_error = f"{job['last_error']}（{retrying}）"
         attachments.append(
             {
                 "id": f["id"],
@@ -75,6 +85,7 @@ def item_to_api(conn: sqlite3.Connection, item_id: str) -> dict[str, Any] | None
                 "size": f["size"] or 0,
                 "mime": f["mime"] or "",
                 "uploadStatus": f["upload_status"],
+                "uploadError": upload_error,
                 "hue": _hue(f["id"]),
                 "durationSec": meta.get("duration"),
                 "previewUrl": f"/api/files/{f['id']}/raw"

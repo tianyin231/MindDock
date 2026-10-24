@@ -32,14 +32,24 @@ def enqueue(conn: sqlite3.Connection, job_type: str, ref_id: str, delay: int = 0
     )
 
 
-def claim(conn: sqlite3.Connection) -> Job | None:
+def claim(
+    conn: sqlite3.Connection, *, only: tuple[str, ...] = (), exclude: tuple[str, ...] = ()
+) -> Job | None:
+    """取一个到期的任务；only / exclude 按类型筛选（上传由单独的消费者处理，不占用其他任务）。"""
     now = now_iso()
+    where, args = "", []
+    if only:
+        where += f" AND type IN ({','.join('?' * len(only))})"
+        args += only
+    if exclude:
+        where += f" AND type NOT IN ({','.join('?' * len(exclude))})"
+        args += exclude
     # 用 fetchall 读完 RETURNING 的结果，语句才算执行完毕并释放写锁
     rows = conn.execute(
         "UPDATE jobs SET status = 'running', locked_at = ?, attempts = attempts + 1, updated_at = ? "
-        "WHERE id = (SELECT id FROM jobs WHERE status IN ('queued', 'failed') AND run_after <= ? "
-        "ORDER BY run_after, id LIMIT 1) RETURNING id, type, ref_id, attempts",
-        (now, now, now),
+        "WHERE id = (SELECT id FROM jobs WHERE status IN ('queued', 'failed') AND run_after <= ?"
+        f"{where} ORDER BY run_after, id LIMIT 1) RETURNING id, type, ref_id, attempts",
+        (now, now, now, *args),
     ).fetchall()
     if not rows:
         return None

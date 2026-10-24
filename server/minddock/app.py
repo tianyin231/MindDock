@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from minddock import __version__
 from minddock.api import auth, items, live, qq, settings
+from minddock.api import storage as storage_api
 from minddock.api import vault as vault_api
 from minddock.config import Settings, get_settings
 from minddock.db import connect, migrate
@@ -66,7 +67,7 @@ def create_app(config: Settings | None = None) -> FastAPI:
             "schema": schema,
         }
 
-    for module in (auth, settings, items, live, qq, vault_api):
+    for module in (auth, settings, items, live, qq, vault_api, storage_api):
         app.include_router(module.router)
     _mount_web(app, config.web_dist_dir)
     return app

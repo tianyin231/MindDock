@@ -4,6 +4,7 @@
 """
 
 import json
+import secrets
 import sqlite3
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -137,8 +138,12 @@ class SettingsStore:
         return values
 
     def version(self, key: str) -> str | None:
-        """分组最后保存的时间；常驻服务据此判断设置是否变化。"""
-        return self._raw(key).get("_updated_at")
+        """分组每次保存都会变的标记；常驻服务据此判断设置是否变化。
+        时间只精确到秒，所以再带一个随机修订号，同一秒内保存两次也能区分。"""
+        raw = self._raw(key)
+        if "_updated_at" not in raw:
+            return None
+        return f"{raw['_updated_at']}/{raw.get('_rev', '')}"
 
     def configured(self, key: str) -> bool:
         values = self.get(key)
@@ -189,6 +194,7 @@ class SettingsStore:
                 raise SettingsError(f"未知的设置项：{name}")
             raw[name] = self._coerce(f, value)
         raw["_updated_at"] = now_iso()
+        raw["_rev"] = secrets.token_hex(4)
         self._conn.execute(
             "INSERT INTO settings (key, value) VALUES (?, ?) "
             "ON CONFLICT (key) DO UPDATE SET value = excluded.value",

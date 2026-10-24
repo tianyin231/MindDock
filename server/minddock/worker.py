@@ -1,4 +1,4 @@
-"""后台任务执行：下载附件、AI 整理、到点提醒，并在需要时给 QQ 发确认消息。"""
+"""后台任务执行：下载附件、上传夸克、AI 整理、到点提醒，并在需要时给 QQ 发确认消息。"""
 
 import asyncio
 import hashlib
@@ -14,16 +14,18 @@ import httpx2
 from minddock import reminders
 from minddock.config import Settings
 from minddock.items import item_to_api
-from minddock.jobs import claim, complete, fail, requeue_stale
+from minddock.jobs import claim, complete, enqueue, fail, requeue_stale
 from minddock.notify import Notifier
 from minddock.organize import AIError, organize_item
 from minddock.qq.replies import prune_inbound
 from minddock.settings_store import SettingsStore
+from minddock.storage import Archiver, enqueue_pending
 from minddock.util import emit, prune_events
 
 log = logging.getLogger(__name__)
 
 MAX_DOWNLOAD = 2 * 1024**3
+UPLOAD = ("upload",)
 
 
 class Worker:
@@ -39,18 +41,25 @@ class Worker:
         self.http = http
         self.config = config
         self.notifier = Notifier(conn, store, http)
+        self.archiver = Archiver(conn, store, http, config, self.notifier)
 
     async def run(self, concurrency: int = 3) -> None:
         stale = requeue_stale(self.conn)
         if stale:
             log.info("已把 %d 个中断的任务放回队列", stale)
+        # 上传可能持续很久，单独一个消费者处理，不占用 AI 整理和提醒
         await asyncio.gather(
-            *(self._consume() for _ in range(concurrency)), self._reminders(), self._housekeeping()
+            *(self._consume(exclude=UPLOAD) for _ in range(concurrency)),
+            self._consume(only=UPLOAD),
+            self._reminders(),
+            self._housekeeping(),
         )
 
-    async def _consume(self) -> None:
+    async def _consume(self, *, only: tuple[str, ...] = (), exclude: tuple[str, ...] = ()) -> None:
         while True:
-            job = claim(self.conn)
+            if only == UPLOAD:
+                self.archiver.watch_settings()
+            job = claim(self.conn, only=only, exclude=exclude)
             if job is None:
                 await asyncio.sleep(1)
                 continue
@@ -79,8 +88,13 @@ class Worker:
 
     async def _housekeeping(self) -> None:
         while True:
-            prune_events(self.conn)
-            prune_inbound(self.conn)
+            try:
+                prune_events(self.conn)
+                prune_inbound(self.conn)
+                if self.store.configured("storage"):
+                    enqueue_pending(self.conn)
+            except Exception:
+                log.exception("例行维护出错")
             await asyncio.sleep(600)
 
     async def notify_owner(self, item_id: str, text: str) -> None:
@@ -137,8 +151,14 @@ async def handle_download(worker: Worker, file_id: str) -> None:
         "UPDATE files SET sha256 = ?, size = ?, mime = ?, local_path = ? WHERE id = ?",
         (digest.hexdigest(), size, mime, relative.as_posix(), file_id),
     )
+    if worker.store.configured("storage"):
+        enqueue(worker.conn, "upload", file_id)
     if item := item_to_api(worker.conn, row["item_id"]):
         emit(worker.conn, "item.updated", {"item": item})
+
+
+async def handle_upload(worker: Worker, file_id: str) -> None:
+    await worker.archiver.upload(file_id)
 
 
 async def handle_remind(worker: Worker, reminder_id: str) -> None:
@@ -151,4 +171,5 @@ HANDLERS: dict[str, Callable[[Worker, str], Awaitable[None]]] = {
     "organize": handle_organize,
     "download": handle_download,
     "remind": handle_remind,
+    "upload": handle_upload,
 }
