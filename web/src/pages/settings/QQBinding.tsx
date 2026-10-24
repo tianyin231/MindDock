@@ -1,7 +1,7 @@
-import { CircleCheckIcon, Loader2Icon } from 'lucide-react'
+import { CircleCheckIcon, Loader2Icon, SendIcon } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { toast } from 'sonner'
-import { useCreateBindCode, useQQ, useUnbind, type QQState } from '@/api/qq'
+import { useCreateBindCode, useQQ, useSendTestMessage, useUnbind, type QQState } from '@/api/qq'
 import { Button } from '@/components/ui/button'
 import { relativeTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -19,6 +19,7 @@ export function QQBinding() {
   const { data } = useQQ()
   const create = useCreateBindCode()
   const unbind = useUnbind()
+  const sendTest = useSendTestMessage()
   const wasBound = useRef<boolean | null>(null)
 
   useEffect(() => {
@@ -49,15 +50,33 @@ export function QQBinding() {
             <CircleCheckIcon className="size-4 text-emerald-500" />
             已绑定你的 QQ{owner.bound_at && <span className="text-muted-foreground">（{relativeTime(owner.bound_at)}）</span>}
           </span>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={unbind.isPending}
-            onClick={() => window.confirm('解除后机器人将不再处理你的消息，确定吗？') && unbind.mutate()}
-          >
-            解除绑定
-          </Button>
+          <span className="flex gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={sendTest.isPending}
+              title="QQ 主动消息每月额度有限，不要频繁测试"
+              onClick={() =>
+                sendTest.mutate(undefined, {
+                  onSuccess: (r) => (r.ok ? toast.success(r.message) : toast.error(r.message)),
+                  onError: (err) => toast.error(err.message),
+                })
+              }
+            >
+              {sendTest.isPending ? <Loader2Icon className="animate-spin" /> : <SendIcon />}
+              发送测试消息
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={unbind.isPending}
+              onClick={() => window.confirm('解除后机器人将不再处理你的消息，确定吗？') && unbind.mutate()}
+            >
+              解除绑定
+            </Button>
+          </span>
         </div>
       ) : bind ? (
         <div className="space-y-1 rounded-lg bg-muted/60 p-4 text-center">

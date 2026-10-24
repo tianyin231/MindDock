@@ -19,6 +19,7 @@ from minddock.db import now_iso
 from minddock.ingest import Incoming, IncomingAttachment, ingest
 from minddock.qq.api import QQApi, QQError
 from minddock.qq.gateway import Gateway
+from minddock.qq.replies import next_reply_seq, record_inbound
 from minddock.secret_rules import detect_secret
 from minddock.settings_store import SettingsStore
 from minddock.util import emit, kv_delete, kv_get, kv_set
@@ -120,9 +121,11 @@ class Bot:
         else:
             log.debug("忽略事件 %s", event)
 
-    async def reply(self, msg: Incoming, text: str, seq: int = 1) -> None:
+    async def reply(self, msg: Incoming, text: str) -> None:
         if self.api is None:
             return
+        # 主人的消息由数据库分配 msg_seq（worker 也会回复同一条）；未绑定者的消息只回复一次
+        seq = next_reply_seq(self.conn, msg.msg_id) or 1
         try:
             await self.api.send_c2c(msg.openid, text, msg.msg_id, seq)
         except (QQError, httpx2.HTTPError) as exc:
@@ -136,6 +139,7 @@ class Bot:
         if msg.openid != owner["openid"]:
             log.info("忽略未绑定用户的消息")
             return
+        record_inbound(self.conn, msg.msg_id)
 
         text = msg.content.strip()
         if text.startswith("/"):
@@ -182,6 +186,7 @@ class Bot:
 
         kv_set(self.conn, OWNER_KEY, {"openid": msg.openid, "bound_at": now_iso()})
         kv_delete(self.conn, BIND_KEY)
+        record_inbound(self.conn, msg.msg_id)
         emit(self.conn, "qq.bound", {})
         log.info("已绑定主人")
         await self.reply(

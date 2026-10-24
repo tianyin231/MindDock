@@ -27,6 +27,13 @@ export function useCreateBindCode() {
   })
 }
 
+/** 发一条主动消息，检查到点提醒能否送达 */
+export function useSendTestMessage() {
+  return useMutation({
+    mutationFn: () => http.post<{ ok: boolean; message: string }>('/api/qq/test'),
+  })
+}
+
 export function useUnbind() {
   const qc = useQueryClient()
   return useMutation({

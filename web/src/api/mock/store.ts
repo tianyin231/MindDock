@@ -2,7 +2,7 @@
  * 内存版后端：在接入真实接口之前，用来驱动整个前端和归类动画。
  * 行为对齐设计文档：新消息先进"处理中"，AI 归类后进入分区；密钥在收件时直接分流。
  */
-import type { Counts, Item, ItemPartition, LiveEvent, Secret } from '../types'
+import type { Counts, Item, ItemPartition, LiveEvent, ReminderAction, Secret } from '../types'
 import { INCOMING, makeCode, makeId, seedItems, seedSecrets } from './seed'
 
 const items = new Map<string, Item>(seedItems().map((i) => [i.id, i]))
@@ -31,7 +31,8 @@ function sortForPartition(list: Item[], partition: ItemPartition): Item[] {
     return list.sort((a, b) => Number(!!a.todo?.doneAt) - Number(!!b.todo?.doneAt) || due(a) - due(b))
   }
   if (partition === 'reminder') {
-    return list.sort((a, b) => Date.parse(a.reminder!.remindAt) - Date.parse(b.reminder!.remindAt))
+    const at = (i: Item) => (i.reminder ? Date.parse(i.reminder.remindAt) : Number.MAX_SAFE_INTEGER)
+    return list.sort((a, b) => at(a) - at(b))
   }
   return list.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
 }
@@ -167,6 +168,29 @@ export const mockBackend = {
     target.partitionSource = 'user'
     target.processing = undefined
     if (partition === 'todo' && !target.todo) target.todo = {}
+    if (partition !== 'reminder' && target.reminder?.status === 'scheduled') target.reminder.status = 'cancelled'
+    return clone(target)
+  },
+
+  async reminderAction(id: string, body: ReminderAction): Promise<Item> {
+    await latency(80)
+    const target = mustGet(id)
+    const r = target.reminder
+    if (body.action === 'reschedule') {
+      target.reminder = { remindAt: body.remind_at, repeat: body.repeat, status: 'scheduled' }
+      return clone(target)
+    }
+    if (!r || r.status === 'cancelled') throw new Error('这条没有进行中的提醒')
+    if (body.action === 'done') {
+      r.doneAt = new Date().toISOString()
+      if (r.repeat === 'none') r.status = 'done'
+    } else if (body.action === 'cancel') {
+      r.status = 'cancelled'
+    } else if (body.action === 'snooze') {
+      r.remindAt = new Date(Date.now() + body.minutes * 60_000).toISOString()
+      r.status = 'scheduled'
+      r.doneAt = undefined
+    }
     return clone(target)
   },
 

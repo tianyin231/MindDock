@@ -76,7 +76,7 @@ def ingest(conn: sqlite3.Connection, msg: Incoming) -> IngestResult | None:
     try:
         conn.execute(
             "INSERT INTO items (id, short_code, source, source_msg_id, kind, text, user_tags, no_ai, "
-            "reply_seq, created_at, updated_at) VALUES (?, ?, 'qq', ?, ?, ?, ?, ?, 1, ?, ?)",
+            "created_at, updated_at) VALUES (?, ?, 'qq', ?, ?, ?, ?, ?, ?, ?)",
             (
                 item_id,
                 code,

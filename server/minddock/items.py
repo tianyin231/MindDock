@@ -120,10 +120,14 @@ def item_to_api(conn: sqlite3.Connection, item_id: str) -> dict[str, Any] | None
         "todo": {"dueAt": todo["due_at"], "doneAt": todo["done_at"]} if todo else None,
         "reminder": (
             {
-                "remindAt": reminder["remind_at"],
+                # 延后的那次比原定时间早时，显示延后后的时间
+                "remindAt": min(reminder["remind_at"], reminder["snooze_at"] or "9999"),
                 "repeat": reminder["repeat"],
                 "status": reminder["status"],
                 "channel": reminder["channel"],
+                "sentAt": reminder["sent_at"],
+                "doneAt": reminder["done_at"],
+                "lastError": reminder["last_error"],
             }
             if reminder
             else None
@@ -218,7 +222,7 @@ def reindex(conn: sqlite3.Connection, item_id: str) -> None:
     )
 
 
-def _touch(conn: sqlite3.Connection, item_id: str) -> dict[str, Any]:
+def touch(conn: sqlite3.Connection, item_id: str) -> dict[str, Any]:
     conn.execute("UPDATE items SET updated_at = ? WHERE id = ?", (now_iso(), item_id))
     item = item_to_api(conn, item_id)
     emit(conn, "item.updated", {"item": item})
@@ -236,7 +240,14 @@ def move(conn: sqlite3.Connection, item_id: str, partition: str) -> dict[str, An
         )
         if partition == "todo":
             conn.execute("INSERT OR IGNORE INTO todos (item_id) VALUES (?)", (item_id,))
-        item = _touch(conn, item_id)
+        if partition != "reminder":
+            # 移出"提醒"分区后不再到点提醒
+            conn.execute(
+                "UPDATE reminders SET status = 'cancelled', snooze_at = NULL "
+                "WHERE item_id = ? AND status = 'scheduled'",
+                (item_id,),
+            )
+        item = touch(conn, item_id)
         conn.execute("COMMIT")
     except Exception:
         conn.execute("ROLLBACK")
@@ -250,7 +261,7 @@ def set_todo_done(conn: sqlite3.Connection, item_id: str, done: bool) -> dict[st
     conn.execute(
         "UPDATE todos SET done_at = ? WHERE item_id = ?", (now_iso() if done else None, item_id)
     )
-    return _touch(conn, item_id)
+    return touch(conn, item_id)
 
 
 def add_todo(conn: sqlite3.Connection, title: str) -> dict[str, Any]:

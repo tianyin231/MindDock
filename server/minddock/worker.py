@@ -1,4 +1,4 @@
-"""后台任务执行：下载附件、AI 整理，并在需要时给 QQ 发确认消息。"""
+"""后台任务执行：下载附件、AI 整理、到点提醒，并在需要时给 QQ 发确认消息。"""
 
 import asyncio
 import hashlib
@@ -11,14 +11,15 @@ from pathlib import Path
 
 import httpx2
 
-from minddock.bot import OWNER_KEY
+from minddock import reminders
 from minddock.config import Settings
 from minddock.items import item_to_api
 from minddock.jobs import claim, complete, fail, requeue_stale
+from minddock.notify import Notifier
 from minddock.organize import AIError, organize_item
-from minddock.qq.api import QQApi, QQError
+from minddock.qq.replies import prune_inbound
 from minddock.settings_store import SettingsStore
-from minddock.util import emit, kv_get, prune_events
+from minddock.util import emit, prune_events
 
 log = logging.getLogger(__name__)
 
@@ -37,24 +38,15 @@ class Worker:
         self.store = store
         self.http = http
         self.config = config
-        self._qq: QQApi | None = None
-        self._qq_version: str | None = None
-
-    def qq(self) -> QQApi | None:
-        if not self.store.configured("qq"):
-            return None
-        version = self.store.version("qq")
-        if self._qq is None or version != self._qq_version:
-            cfg = self.store.get("qq")
-            self._qq = QQApi(cfg["app_id"], cfg["app_secret"], bool(cfg.get("sandbox")), self.http)
-            self._qq_version = version
-        return self._qq
+        self.notifier = Notifier(conn, store, http)
 
     async def run(self, concurrency: int = 3) -> None:
         stale = requeue_stale(self.conn)
         if stale:
             log.info("已把 %d 个中断的任务放回队列", stale)
-        await asyncio.gather(*(self._consume() for _ in range(concurrency)), self._housekeeping())
+        await asyncio.gather(
+            *(self._consume() for _ in range(concurrency)), self._reminders(), self._housekeeping()
+        )
 
     async def _consume(self) -> None:
         while True:
@@ -74,31 +66,30 @@ class Worker:
                 if job.type == "organize" and (item := item_to_api(self.conn, job.ref_id)):
                     emit(self.conn, "item.updated", {"item": item})
 
+    async def _reminders(self) -> None:
+        """到点的提醒放进任务队列；离下一条提醒不足 30 秒时按它的时间醒来。"""
+        while True:
+            try:
+                reminders.schedule_due(self.conn)
+                wait = reminders.seconds_until_next(self.conn)
+            except Exception:
+                log.exception("检查到期提醒出错")
+                wait = 30
+            await asyncio.sleep(wait)
+
     async def _housekeeping(self) -> None:
         while True:
             prune_events(self.conn)
+            prune_inbound(self.conn)
             await asyncio.sleep(600)
 
     async def notify_owner(self, item_id: str, text: str) -> None:
-        """优先作为对原消息的被动回复发送；超出回复时效则改为主动消息。"""
-        api, owner = self.qq(), kv_get(self.conn, OWNER_KEY)
+        """整理结果等确认消息：优先回复在原消息下面，超出回复时效则改发主动消息，不发邮件。"""
         row = self.conn.execute(
-            "SELECT source_msg_id, reply_seq FROM items WHERE id = ?", (item_id,)
+            "SELECT source_msg_id FROM items WHERE id = ?", (item_id,)
         ).fetchone()
-        if api is None or owner is None or row is None:
-            return
-        try:
-            if row["source_msg_id"]:
-                seq = row["reply_seq"] + 1
-                self.conn.execute("UPDATE items SET reply_seq = ? WHERE id = ?", (seq, item_id))
-                try:
-                    await api.send_c2c(owner["openid"], text, row["source_msg_id"], seq)
-                    return
-                except QQError as exc:
-                    log.info("被动回复失败，改发主动消息：%s", exc)
-            await api.send_c2c(owner["openid"], text)
-        except (QQError, httpx2.HTTPError) as exc:
-            log.warning("给主人发消息失败：%s", exc)
+        if row is not None:
+            await self.notifier.send(text, reply_to=row["source_msg_id"])
 
 
 async def handle_organize(worker: Worker, item_id: str) -> None:
@@ -150,7 +141,14 @@ async def handle_download(worker: Worker, file_id: str) -> None:
         emit(worker.conn, "item.updated", {"item": item})
 
 
+async def handle_remind(worker: Worker, reminder_id: str) -> None:
+    await reminders.deliver(
+        worker.conn, worker.notifier, reminder_id, worker.config.tz, worker.config.public_url
+    )
+
+
 HANDLERS: dict[str, Callable[[Worker, str], Awaitable[None]]] = {
     "organize": handle_organize,
     "download": handle_download,
+    "remind": handle_remind,
 }

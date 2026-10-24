@@ -2,11 +2,13 @@
 
 import secrets
 
+import httpx2
 from fastapi import APIRouter, Depends, Request
 
 from minddock.api.deps import get_db, require_user
 from minddock.bot import BIND_KEY, OWNER_KEY, STATUS_KEY
 from minddock.db import now_iso
+from minddock.qq.api import QQApi, QQError
 from minddock.settings_store import SettingsStore
 from minddock.util import kv_delete, kv_get, kv_set
 
@@ -56,6 +58,23 @@ async def create_bind_code(request: Request) -> dict:
         get_db(request), BIND_KEY, {"code": code, "expires_at": now_iso(BIND_TTL), "attempts": 0}
     )
     return _view(request)
+
+
+@router.post("/test")
+async def send_test(request: Request) -> dict:
+    """直接发一条主动消息，检查到点提醒能否送达（主动消息额度有限，不要频繁测试）。"""
+    db = get_db(request)
+    store = SettingsStore(db, request.app.state.cipher)
+    owner = kv_get(db, OWNER_KEY)
+    if not store.configured("qq") or owner is None:
+        return {"ok": False, "message": "请先填写机器人设置并绑定你的 QQ"}
+    cfg = store.get("qq")
+    api = QQApi(cfg["app_id"], cfg["app_secret"], bool(cfg.get("sandbox")), request.app.state.http)
+    try:
+        await api.send_c2c(owner["openid"], "🔔 MindDock 测试：收到这条，说明到点提醒可以送达。")
+    except (QQError, httpx2.HTTPError) as exc:
+        return {"ok": False, "message": f"主动消息发送失败：{exc}"}
+    return {"ok": True, "message": "已发送，请在 QQ 中查看"}
 
 
 @router.delete("/owner")

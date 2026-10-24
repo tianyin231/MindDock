@@ -1,5 +1,6 @@
 import {
   AudioLinesIcon,
+  BellOffIcon,
   BellRingIcon,
   CircleCheckIcon,
   CloudAlertIcon,
@@ -14,14 +15,16 @@ import {
   MailIcon,
   MessageCircleIcon,
   RepeatIcon,
+  TriangleAlertIcon,
 } from 'lucide-react'
 import { motion } from 'motion/react'
-import type { Attachment, Item } from '@/api/types'
+import type { Attachment, Item, ReminderInfo } from '@/api/types'
 import { useToggleTodo } from '@/api/hooks'
 import { Checkbox } from '@/components/ui/checkbox'
 import { TagList } from '@/components/common'
 import { useOpenItem } from '@/lib/open-item'
 import { dueLabel, duration, fileSize, hm, relativeTime, REPEAT_LABEL, shortDay } from '@/lib/format'
+import { reminderStatus, type ReminderTone } from '@/lib/reminder-status'
 import { cn } from '@/lib/utils'
 
 // ---- 附件 ----
@@ -180,10 +183,27 @@ export function TodoRow({ item, className }: { item: Item; className?: string })
 
 // ---- 提醒 ----
 
+const REMINDER_TONE: Record<ReminderTone, string> = {
+  pending: 'text-muted-foreground',
+  ok: 'text-muted-foreground',
+  muted: 'text-muted-foreground',
+  warn: 'text-amber-600 dark:text-amber-400',
+  error: 'text-destructive',
+}
+
+function ReminderStatusIcon({ r, className }: { r: ReminderInfo; className?: string }) {
+  if (r.status === 'failed' || r.lastError) return <TriangleAlertIcon className={className} />
+  if (r.status === 'cancelled') return <BellOffIcon className={className} />
+  if (r.status === 'done') return <CircleCheckIcon className={className} />
+  if (r.status === 'sent') return r.channel === 'email' ? <MailIcon className={className} /> : <MessageCircleIcon className={className} />
+  return <BellRingIcon className={className} />
+}
+
 export function ReminderRow({ item, className }: { item: Item; className?: string }) {
   const openItem = useOpenItem()
-  const r = item.reminder!
-  const sent = r.status === 'sent'
+  const r = item.reminder
+  const settled = r ? ['sent', 'done', 'cancelled'].includes(r.status) : false
+  const status = r ? reminderStatus(r) : null
   return (
     <motion.button
       layout
@@ -191,37 +211,42 @@ export function ReminderRow({ item, className }: { item: Item; className?: strin
       onClick={() => openItem(item.id)}
       className={cn(
         'flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted/50',
-        sent && 'opacity-60',
+        settled && 'opacity-60',
         className,
       )}
     >
       <span className="flex w-14 shrink-0 flex-col items-center rounded-lg bg-rose-500/10 py-1 text-rose-700 dark:text-rose-400">
-        <span className="text-sm font-semibold tabular-nums">{hm(r.remindAt)}</span>
-        <span className="text-[10px] leading-tight">{shortDay(r.remindAt)}</span>
+        {r ? (
+          <>
+            <span className="text-sm font-semibold tabular-nums">{hm(r.remindAt)}</span>
+            <span className="text-[10px] leading-tight">{shortDay(r.remindAt)}</span>
+          </>
+        ) : (
+          <span className="py-1.5 text-xs">未定</span>
+        )}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium">{item.title}</span>
+        <span className={cn('block truncate text-sm font-medium', r?.status === 'done' && 'line-through')}>
+          {item.title}
+        </span>
         <span className="flex items-center gap-2 text-xs text-muted-foreground">
-          {r.repeat !== 'none' && (
+          {r && r.repeat !== 'none' && (
             <span className="inline-flex items-center gap-1">
               <RepeatIcon className="size-3" />
               {REPEAT_LABEL[r.repeat]}
             </span>
           )}
-          {sent ? (
-            <span className="inline-flex items-center gap-1">
-              {r.channel === 'email' ? <MailIcon className="size-3" /> : <MessageCircleIcon className="size-3" />}
-              已通过{r.channel === 'email' ? '邮件' : ' QQ '}送达
+          {r && status ? (
+            <span className={cn('inline-flex items-center gap-1', REMINDER_TONE[status.tone])}>
+              <ReminderStatusIcon r={r} className="size-3" />
+              {status.short}
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1">
-              <BellRingIcon className="size-3" />
-              到点 QQ 提醒
-            </span>
+            <span>还没有提醒时间</span>
           )}
         </span>
       </span>
-      {sent && <CircleCheckIcon className="size-4 shrink-0 text-emerald-500" />}
+      {r?.status === 'sent' && <CircleCheckIcon className="size-4 shrink-0 text-emerald-500" />}
     </motion.button>
   )
 }

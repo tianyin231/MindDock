@@ -78,7 +78,7 @@ export const PARTITIONS: PartitionMeta[] = [
     label: '提醒',
     path: '/reminders',
     icon: AlarmClockIcon,
-    description: '到点通过 QQ 主动提醒你',
+    description: '到点通过 QQ 提醒你',
     text: 'text-rose-600 dark:text-rose-400',
     soft: 'bg-rose-500/10 dark:bg-rose-400/15',
     solid: 'bg-rose-500',

@@ -5,12 +5,13 @@ import { useItem, useMoveItem, useRetryItem, useToggleTodo } from '@/api/hooks'
 import type { Item, ItemPartition } from '@/api/types'
 import { PartitionBadge, TagList } from '@/components/common'
 import { AttachmentRow } from '@/components/items'
+import { ReminderControls } from '@/components/ReminderControls'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
-import { dayLabel, dueLabel, hm, monthDay, relativeTime, REPEAT_LABEL } from '@/lib/format'
+import { dueLabel, hm, monthDay, relativeTime } from '@/lib/format'
 import { ITEM_PARAM } from '@/lib/open-item'
 import { MOVABLE_PARTITIONS, PARTITION } from '@/lib/partitions'
 
@@ -109,23 +110,9 @@ function ItemDetail({ item }: { item: Item }) {
           </Field>
         )}
 
-        {item.reminder && (
+        {(item.reminder || item.partition === 'reminder') && (
           <Field label="提醒">
-            <div className="rounded-lg border p-3 text-sm">
-              <p className="font-medium">
-                {dayLabel(item.reminder.remindAt)} {hm(item.reminder.remindAt)}
-                {item.reminder.repeat !== 'none' && (
-                  <span className="ml-2 text-xs font-normal text-muted-foreground">
-                    {REPEAT_LABEL[item.reminder.repeat]}重复
-                  </span>
-                )}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {item.reminder.status === 'sent'
-                  ? `已通过${item.reminder.channel === 'email' ? '邮件' : ' QQ '}送达`
-                  : '到点通过 QQ 主动提醒，失败时改发邮件'}
-              </p>
-            </div>
+            <ReminderControls key={item.id} item={item} />
           </Field>
         )}
 

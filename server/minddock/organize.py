@@ -12,12 +12,13 @@ from typing import Any, Literal
 import httpx2
 from pydantic import BaseModel, Field, ValidationError
 
+from minddock import reminders
 from minddock.db import now_iso
 from minddock.integrations.probes import error_text
 from minddock.items import URL_RE, item_to_api, reindex
 from minddock.links import fetch_page
 from minddock.timeutil import describe_now, friendly, to_utc_iso
-from minddock.util import emit, new_id
+from minddock.util import emit
 
 PROMPT_VERSION = "2026-10-24.2"
 
@@ -247,10 +248,7 @@ async def organize_item(
                 "SELECT 1 FROM reminders WHERE item_id = ? AND status = 'scheduled'", (item_id,)
             ).fetchone()
         ):
-            conn.execute(
-                "INSERT INTO reminders (id, item_id, remind_at, repeat, created_at) VALUES (?, ?, ?, ?, ?)",
-                (new_id(), item_id, remind_at, result.repeat, now_iso()),
-            )
+            reminders.create(conn, item_id, remind_at, result.repeat)
         reindex(conn, item_id)
         api_item = item_to_api(conn, item_id)
         emit(conn, "item.classified", {"item": api_item})

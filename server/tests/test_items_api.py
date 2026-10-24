@@ -53,3 +53,26 @@ def test_qq_binding_code_and_status(client, app):
 def test_item_endpoints_require_login(client):
     assert client.get("/api/items", params={"partition": "inbox"}).status_code == 401
     assert client.get("/api/events").status_code == 401
+
+
+def test_reminder_actions_from_panel(client, app):
+    setup_account(client, app)
+    item = add(app, "周五交房租", "r1")
+    client.post(f"/api/items/{item.item_id}/move", json={"partition": "reminder"})
+    url = f"/api/items/{item.item_id}/reminder"
+
+    past = client.post(url, json={"action": "reschedule", "remind_at": "2020-01-01T08:00:00+08:00"})
+    assert past.status_code == 422
+    set_ = client.post(
+        url,
+        json={"action": "reschedule", "remind_at": "2099-01-01T09:30:00.000Z", "repeat": "monthly"},
+    ).json()
+    assert set_["reminder"]["remindAt"] == "2099-01-01T09:30:00Z"
+    assert set_["reminder"]["repeat"] == "monthly" and set_["reminder"]["status"] == "scheduled"
+
+    snoozed = client.post(url, json={"action": "snooze", "minutes": 10}).json()
+    assert snoozed["reminder"]["remindAt"] < "2099-01-01T09:30:00Z"
+    assert client.post(url, json={"action": "cancel"}).json()["reminder"]["status"] == "cancelled"
+    assert client.post(url, json={"action": "done"}).status_code == 422
+
+    assert client.post("/api/qq/test").json()["ok"] is False  # 未配置机器人

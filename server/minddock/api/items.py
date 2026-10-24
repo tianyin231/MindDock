@@ -1,4 +1,4 @@
-"""条目接口：分区列表、计数、搜索、移动、待办勾选、重试、附件下载。"""
+"""条目接口：分区列表、计数、搜索、移动、待办勾选、提醒操作、重试、附件下载。"""
 
 from pathlib import Path
 from typing import Literal
@@ -8,8 +8,10 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from minddock import items as repo
+from minddock import reminders
 from minddock.api.deps import get_db, require_user
 from minddock.jobs import retry_now
+from minddock.timeutil import to_utc_iso
 
 router = APIRouter(prefix="/api", tags=["items"], dependencies=[Depends(require_user)])
 
@@ -67,6 +69,32 @@ class NewTodo(BaseModel):
 @router.post("/todos")
 async def add_todo(body: NewTodo, request: Request) -> dict:
     return repo.add_todo(get_db(request), body.title.strip())
+
+
+class ReminderBody(BaseModel):
+    action: Literal["done", "snooze", "cancel", "reschedule"]
+    minutes: int | None = None
+    remind_at: str | None = None
+    repeat: Literal["none", "daily", "weekly", "monthly"] = "none"
+
+
+@router.post("/items/{item_id}/reminder")
+async def reminder_action(item_id: str, body: ReminderBody, request: Request) -> dict:
+    db = get_db(request)
+    _found(repo.item_to_api(db, item_id))
+    try:
+        if body.action == "done":
+            return reminders.mark_done(db, item_id)
+        if body.action == "snooze":
+            return reminders.snooze(db, item_id, body.minutes or 30)
+        if body.action == "cancel":
+            return reminders.cancel(db, item_id)
+        remind_at = to_utc_iso(body.remind_at, request.app.state.config.tz)
+        if remind_at is None:
+            raise reminders.ReminderError("提醒时间格式不正确")
+        return reminders.reschedule(db, item_id, remind_at, body.repeat)
+    except reminders.ReminderError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
 
 
 @router.post("/items/{item_id}/retry")

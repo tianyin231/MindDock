@@ -1,4 +1,4 @@
-import { AlarmClockIcon, MailIcon, MessageCircleIcon } from 'lucide-react'
+import { AlarmClockIcon, MailIcon, MessageCircleIcon, TerminalIcon } from 'lucide-react'
 import { useItems } from '@/api/hooks'
 import type { Item } from '@/api/types'
 import { EmptyState, PageHeader } from '@/components/common'
@@ -7,15 +7,21 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { dayDiff } from '@/lib/format'
 
 const GROUPS = [
+  { key: 'unset', label: '未设置时间' },
+  { key: 'failed', label: '发送失败' },
   { key: 'today', label: '今天' },
   { key: 'tomorrow', label: '明天' },
   { key: 'later', label: '之后' },
   { key: 'sent', label: '已送达' },
+  { key: 'done', label: '已完成' },
+  { key: 'cancelled', label: '已取消' },
 ] as const
 
 function groupOf(item: Item): (typeof GROUPS)[number]['key'] {
-  const r = item.reminder!
-  if (r.status === 'sent') return 'sent'
+  const r = item.reminder
+  if (!r) return 'unset'
+  if (r.status !== 'scheduled') return r.status
+  // 还没发出去的过期提醒（正在重试）也放在今天
   const diff = dayDiff(r.remindAt)
   if (diff <= 0) return 'today'
   if (diff === 1) return 'tomorrow'
@@ -34,11 +40,15 @@ export function RemindersPage() {
       <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-xl border bg-card px-4 py-3 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5">
           <MessageCircleIcon className="size-3.5 text-rose-500" />
-          到点由 QQ 机器人主动发消息
+          到点由 QQ 机器人提醒你
         </span>
         <span className="flex items-center gap-1.5">
           <MailIcon className="size-3.5" />
-          发送失败时自动改发邮件
+          QQ 发不出去时改发邮件（需在设置中配置）
+        </span>
+        <span className="flex items-center gap-1.5">
+          <TerminalIcon className="size-3.5" />
+          在 QQ 回复 /done 完成，/later 30m 稍后再提醒
         </span>
       </div>
 

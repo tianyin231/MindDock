@@ -31,11 +31,22 @@ export interface TodoInfo {
 }
 
 export interface ReminderInfo {
+  /** 下一次提醒时间；已送达的单次提醒为原定时间 */
   remindAt: string
   repeat: RepeatRule
-  status: 'scheduled' | 'sent' | 'failed'
-  channel?: 'qq' | 'email'
+  status: 'scheduled' | 'sent' | 'done' | 'failed' | 'cancelled'
+  /** 最近一次送达的渠道与时间 */
+  channel?: 'qq' | 'email' | null
+  sentAt?: string | null
+  doneAt?: string | null
+  /** 最近一次发送失败的原因（会自动重试） */
+  lastError?: string | null
 }
+
+export type ReminderAction =
+  | { action: 'done' | 'cancel' }
+  | { action: 'snooze'; minutes: number }
+  | { action: 'reschedule'; remind_at: string; repeat: RepeatRule }
 
 export interface Item {
   id: string

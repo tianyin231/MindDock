@@ -101,7 +101,7 @@ function reminder(
   return item('reminder', {
     text,
     title,
-    reminder: { remindAt, repeat, status, channel },
+    reminder: { remindAt, repeat, status, channel, sentAt: status === 'sent' ? remindAt : undefined },
     createdAt: ago(2 * DAY * Math.random() + HOUR),
   })
 }
@@ -225,7 +225,7 @@ export function seedItems(): Item[] {
     reminder('每周一上午 10 点周会', '周会', nextWeekday(1, 10), 'weekly'),
     reminder('下周三晚上 7 点给妈妈打电话，她生日', '给妈妈打电话（生日）', dayAt(6, 19), 'none'),
     reminder('昨天早上 7 点提醒我体检空腹', '体检前空腹', dayAt(-1, 7), 'none', 'sent', 'qq'),
-    reminder('每月 20 号提醒交房租', '交房租', dayAt(-3, 9), 'monthly', 'sent', 'email'),
+    reminder('周三上午 9 点提醒我交房租', '交房租', dayAt(-3, 9), 'none', 'sent', 'email'),
 
     // 文件
     file('徒步山顶合影', attachment('image', 'IMG_20261021_山顶.jpg', 4_200_000, 150), ['徒步'], 20 * MIN),

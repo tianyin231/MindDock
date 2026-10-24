@@ -1,6 +1,6 @@
 import type { Api } from './client'
 import { ApiError, http } from './http'
-import type { Counts, Item, ItemPartition, LiveEvent, Secret } from './types'
+import type { Counts, Item, ItemPartition, LiveEvent, ReminderAction, Secret } from './types'
 
 /** 真实后端：JSON 接口 + SSE 实时事件 */
 export const httpBackend: Api = {
@@ -15,6 +15,7 @@ export const httpBackend: Api = {
   setTodoDone: (id: string, done: boolean) => http.post<Item>(`/api/items/${id}/todo`, { done }),
   addTodo: (title: string) => http.post<Item>('/api/todos', { title }),
   moveItem: (id: string, partition: ItemPartition) => http.post<Item>(`/api/items/${id}/move`, { partition }),
+  reminderAction: (id: string, body: ReminderAction) => http.post<Item>(`/api/items/${id}/reminder`, body),
   retryItem: async (id: string) => {
     await http.post(`/api/items/${id}/retry`)
   },

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
-import type { Counts, Item, ItemPartition } from './types'
+import type { Counts, Item, ItemPartition, ReminderAction } from './types'
 
 export const qk = {
   counts: ['counts'] as const,
@@ -81,6 +81,17 @@ export function useMoveItem() {
       qc.invalidateQueries({ queryKey: ['items'] })
       qc.invalidateQueries({ queryKey: qk.counts })
       qc.setQueryData(qk.item(item.id), item)
+    },
+  })
+}
+
+export function useReminderAction() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: ReminderAction }) => api.reminderAction(id, body),
+    onSuccess: (item) => {
+      qc.setQueryData(qk.item(item.id), item)
+      qc.invalidateQueries({ queryKey: qk.items('reminder') })
     },
   })
 }
