@@ -23,7 +23,7 @@ if [ ! -f .env ]; then
   cat > .env <<EOF
 # MindDock 部署配置。业务设置（QQ、AI、网盘、邮件）请在面板中填写。
 MINDDOCK_DOMAIN=$DOMAIN
-MINDDOCK_PUBLIC_URL=https://$DOMAIN:8443
+MINDDOCK_PUBLIC_URL=https://$DOMAIN
 # 镜像标签：main 跟随最新提交；也可以固定为某个版本，如 0.2.0
 MINDDOCK_TAG=main
 MINDDOCK_SECRET_KEY=$(openssl rand -base64 32)
@@ -46,7 +46,7 @@ if [[ " $resolved " != *" $public_ip "* ]]; then
   exit 1
 fi
 
-say "宝塔 nginx：80 端口转给 Caddy（证书验证与跳转 8443）"
+say "宝塔 nginx：80 端口转给 Caddy（证书验证与跳转 HTTPS）"
 site_conf="/www/server/panel/vhost/nginx/$DOMAIN.conf"
 if [ -f "$site_conf" ]; then
   echo "已存在 $site_conf（可能已在宝塔中添加为网站），保持不变"
@@ -57,8 +57,22 @@ else
   echo "未找到宝塔 nginx，请自行把 80 端口反向代理到 127.0.0.1:8081" >&2
 fi
 
+say "宝塔 nginx：443 端口按域名分流给 Caddy"
+sni_conf=/www/server/panel/vhost/nginx/tcp/sni_443.conf
+holder=$(ss -Hltnp 'sport = :443' | grep -v nginx || true)
+if [ -f "$sni_conf" ]; then
+  grep -q "$DOMAIN" "$sni_conf" || echo "请在 $sni_conf 的 map 中加入一行：$DOMAIN 127.0.0.1:8443;" >&2
+elif [ -n "$holder" ]; then
+  echo "443 端口被其他程序占用，请把它改为监听本机其他端口，再参照 deploy/nginx-sni-443.conf 写入 $sni_conf" >&2
+elif [ -d "$(dirname "$sni_conf")" ]; then
+  sed "s/__DOMAIN__/$DOMAIN/g" deploy/nginx-sni-443.conf > "$sni_conf"
+  nginx -t && nginx -s reload
+else
+  echo "未找到宝塔 nginx，请自行把 443 端口的连接（PROXY protocol）转发到 127.0.0.1:8443" >&2
+fi
+
 if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
-  ufw allow 8443/tcp comment 'MindDock' >/dev/null
+  ufw allow 443/tcp >/dev/null
 fi
 
 say "拉取镜像并启动"
@@ -84,7 +98,7 @@ for _ in $(seq 1 20); do
   sleep 2
 done
 
-say "完成：https://$DOMAIN:8443"
+say "完成：https://$DOMAIN"
 if [ -n "$code" ]; then
   echo "首次打开面板时需要的 $code"
 fi

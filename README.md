@@ -59,9 +59,11 @@ bash /opt/minddock/deploy/install.sh minddock.example.com
 bash /opt/minddock/deploy/update.sh
 ```
 
-`install.sh` 会生成 `/opt/minddock/.env`（加密主密钥等，只在服务器上），配置宝塔 nginx 把 80 端口转给 Caddy（证书验证、跳转 8443），并启动面板、OpenList 和 Caddy。面板地址为 `https://<域名>:8443`。QQ 机器人、AI 模型、夸克网盘、邮件通知都在面板的"设置"页填写。
+`install.sh` 会生成 `/opt/minddock/.env`（加密主密钥等，只在服务器上），配置宝塔 nginx 把 80 端口转给 Caddy（证书验证、跳转 HTTPS）、把 443 端口上本域名的连接按 SNI 转给 Caddy，并启动面板、OpenList 和 Caddy。面板地址为 `https://<域名>`。QQ 机器人、AI 模型、夸克网盘、邮件通知都在面板的"设置"页填写。
 
-在宝塔中管理：容器在"Docker → 容器编排"里显示为 `minddock`；域名可以在"网站 → Docker"里添加为反向代理网站（目标容器 `minddock-caddy-1`，端口 8081），代替 install.sh 写入的 nginx 配置。证书由 Caddy 管理，不要在宝塔里为该站点开启 SSL。
+443 由 nginx 的四层配置 `/www/server/panel/vhost/nginx/tcp/sni_443.conf` 按域名分流，只转发、不解密，证书由 Caddy 自动申请和续期（Let's Encrypt）。因此宝塔里的网站不能再直接开启 443 的 SSL，否则会与分流冲突；需要时在该文件的 map 中为域名加一条转发。
+
+在宝塔中管理：容器在"Docker → 容器编排"里显示为 `minddock`；域名可以在"网站 → Docker"里添加为反向代理网站（目标容器 `minddock-caddy-1`，端口 8081），代替 install.sh 写入的 nginx 配置。
 
 忘记密码或丢失验证器时，在服务器上删除登录账号（笔记、设置等内容不受影响），再按日志里的新初始化码重新创建：
 

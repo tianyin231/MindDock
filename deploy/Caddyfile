@@ -1,15 +1,28 @@
-# 服务器的 443 被其他服务占用，MindDock 在 8443 提供 HTTPS。
-# 宝塔 nginx 把 80 端口上的请求全部反向代理到本容器的 80（映射为宿主 127.0.0.1:8081）：
-# 证书验证（HTTP-01）由 Caddy 优先处理，其余请求跳转到 8443。
+# 服务器的 443 由宝塔 nginx 按域名（SNI）分流，只转发、不解密（见 deploy/nginx-sni-443.conf）：
+# 本域名转到 Caddy 的 8443（宿主 127.0.0.1:8443），并通过 PROXY protocol 带上访客真实 IP。
+# 80 端口由宝塔 nginx 整体反向代理到本容器的 80（宿主 127.0.0.1:8081）：
+# 证书验证（HTTP-01）由 Caddy 优先处理，其余请求跳转到 HTTPS。
 {
 	http_port 80
 	https_port 8443
 	admin off
+	servers :8443 {
+		listener_wrappers {
+			# 只有本机的 nginx 能连到这个端口（经 Docker 转发时来源是网桥地址）
+			proxy_protocol {
+				timeout 5s
+				allow 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+			}
+			tls
+		}
+		# HTTP/3 走 UDP，不经过 nginx 的 TCP 分流
+		protocols h1 h2
+	}
 }
 
-# 自动跳转会指向默认的 443，这里显式跳到 8443
+# 自动跳转会带上内部端口 8443，这里显式跳到标准的 443
 http://{$MINDDOCK_DOMAIN} {
-	redir https://{$MINDDOCK_DOMAIN}:8443{uri} permanent
+	redir https://{$MINDDOCK_DOMAIN}{uri} permanent
 }
 
 https://{$MINDDOCK_DOMAIN}:8443 {

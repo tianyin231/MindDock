@@ -37,7 +37,7 @@
 │  worker   后台任务：抓网页 / AI 归类整理 / 缩略图 / 上传夸克 / 备份 / 提醒调度 │
 │  panel    JSON 接口 + SSE 实时推送 + 托管前端页面                        │
 │  openlist 夸克 cookie 驱动 → WebDAV（仅容器内网）                      │
-│  caddy    面板 HTTPS 入口（8443；本机 443 已被其他服务占用）          │
+│  caddy    面板 HTTPS 入口（宝塔 nginx 在 443 按域名分流给它）         │
 │                                                                      │
 │  data/minddock.db（SQLite）  data/staging/  data/thumbs/  data/vault/ │
 └──────────────────────────────────────────────────────────────────────┘
@@ -52,7 +52,7 @@
 | `worker` | 执行任务队列中的所有后台任务，调度到期提醒 | 无 |
 | `panel` | JSON 接口、SSE 实时事件、面板上传、托管前端构建产物 | 仅经 `caddy` |
 | `openlist` | 把夸克挂载为 WebDAV | 无；管理界面经 SSH 隧道访问 |
-| `caddy` | HTTPS 与证书自动续期 | 8443；80 端口由宝塔 nginx 把证书验证请求转给它 |
+| `caddy` | HTTPS 与证书自动续期 | 仅本机端口；宝塔 nginx 在 443 按 SNI 转来本域名的连接（不解密，PROXY protocol 带真实 IP），80 端口整体反向代理给它 |
 
 `bot`、`worker`、`panel` 使用同一份代码、同一个镜像，只是启动命令不同；共享一个 SQLite 数据库（WAL 模式，设置 `busy_timeout`）。三个进程之间通过数据库表传递事件（例如 `events` 表），`panel` 读取后经 SSE 推给浏览器。
 
@@ -511,7 +511,7 @@ MindDock/
 - 是否需要"重要原件双存"；
 - 仓库目前为公开仓库，是否改为私有（改为私有后服务器拉镜像需要登录 ghcr.io）。
 
-已定：面板走公网域名 `https://minddock.nanamiyako.cn:8443`；登录为密码 + 新设备验证码；业务设置在面板中填写；部署在 us3q。
+已定：面板走公网域名 `https://minddock.nanamiyako.cn`（443 与 x-ui 的 xray 按 SNI 分流共用）；登录为密码 + 新设备验证码；业务设置在面板中填写；部署在 us3q。
 
 ## 18. 参考资料
 

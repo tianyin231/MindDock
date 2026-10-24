@@ -1,5 +1,6 @@
 # MindDock 部署编排。服务器上的 /opt/minddock 是本仓库的克隆，配置写在同目录的 .env（install.sh 生成）。
-# 对外只开放 8443（HTTPS）；80 端口由宝塔 nginx 把证书验证请求转给 Caddy（见 deploy/nginx-site.conf）。
+# 不直接对外开放端口：宝塔 nginx 把 443 上本域名的连接转给 Caddy 的 8443（见 deploy/nginx-sni-443.conf），
+# 把 80 端口反向代理到 Caddy 的 80（见 deploy/nginx-site.conf）。
 
 name: minddock
 
@@ -60,7 +61,7 @@ services:
     restart: unless-stopped
     depends_on: [panel]
     ports:
-      - "8443:8443"
+      - "127.0.0.1:8443:8443"
       - "127.0.0.1:8081:80"
     environment:
       MINDDOCK_DOMAIN: ${MINDDOCK_DOMAIN:?需要在 .env 中设置}
