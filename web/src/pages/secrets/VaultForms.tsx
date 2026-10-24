@@ -5,7 +5,7 @@ import { api, isDemo } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import type { VaultKeys } from '@/lib/vault-crypto'
-import { errorText, isWrongSecret, loadCrypto, MIN_VAULT_PASSWORD, nextFrame, type VaultCrypto } from './crypto'
+import { errorText, isWrongSecret, loadCrypto, nextFrame, type VaultCrypto } from './crypto'
 import { SecretInput } from './SecretInput'
 
 function Panel({ icon, title, hint, children }: { icon: ReactNode; title: string; hint: ReactNode; children: ReactNode }) {
@@ -26,7 +26,7 @@ function Panel({ icon, title, hint, children }: { icon: ReactNode; title: string
 }
 
 function checkNewPassword(password: string, confirm: string): string {
-  if (password.length < MIN_VAULT_PASSWORD) return `二级密码至少 ${MIN_VAULT_PASSWORD} 位`
+  if (!password) return '请输入二级密码'
   if (password !== confirm) return '两次输入的二级密码不一致'
   return ''
 }
@@ -75,7 +75,7 @@ export function VaultSetup({ onCreated }: { onCreated: (recoveryCode: string) =>
         <SecretInput
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder={`二级密码（至少 ${MIN_VAULT_PASSWORD} 位）`}
+          placeholder="二级密码"
           aria-label="二级密码"
           aria-invalid={Boolean(error)}
         />
@@ -289,7 +289,7 @@ function RecoverForm({
         <SecretInput
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder={`新的二级密码（至少 ${MIN_VAULT_PASSWORD} 位）`}
+          placeholder="新的二级密码"
           aria-label="新的二级密码"
         />
         <SecretInput

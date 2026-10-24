@@ -1,7 +1,5 @@
 export type VaultCrypto = typeof import('@/lib/vault-crypto')
 
-export const MIN_VAULT_PASSWORD = 10
-
 let loading: Promise<VaultCrypto> | null = null
 
 /** libsodium 体积较大，第一次用到时才加载 */

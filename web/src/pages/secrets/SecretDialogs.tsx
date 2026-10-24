@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import type { VaultKeys } from '@/lib/vault-crypto'
-import { errorText, MIN_VAULT_PASSWORD, nextFrame, type VaultCrypto } from './crypto'
+import { errorText, nextFrame, type VaultCrypto } from './crypto'
 import { SecretInput } from './SecretInput'
 
 interface VaultDialogProps {
@@ -80,7 +80,7 @@ export function ChangePasswordDialog({ open, onOpenChange, keys, crypto }: Vault
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    if (password.length < MIN_VAULT_PASSWORD) return setError(`二级密码至少 ${MIN_VAULT_PASSWORD} 位`)
+    if (!password) return setError('请输入新的二级密码')
     if (password !== confirm) return setError('两次输入的二级密码不一致')
     setBusy(true)
     setError('')
@@ -111,7 +111,7 @@ export function ChangePasswordDialog({ open, onOpenChange, keys, crypto }: Vault
           <SecretInput
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder={`新的二级密码（至少 ${MIN_VAULT_PASSWORD} 位）`}
+            placeholder="新的二级密码"
             aria-label="新的二级密码"
           />
           <SecretInput value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="再输入一次" aria-label="确认新的二级密码" />
