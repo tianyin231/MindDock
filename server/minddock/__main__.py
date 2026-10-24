@@ -69,6 +69,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="minddock")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("migrate", help="应用数据库迁移")
+    sub.add_parser(
+        "reset-account",
+        help="忘记密码或丢失验证器时：删除登录账号（内容和设置保留），重启面板后重新初始化",
+    )
     check = sub.add_parser("check", help="用已保存的设置测试各项连接")
     check.add_argument("sections", nargs="*", default=["qq", "ai", "storage"])
     sub.add_parser("bot", help="启动常驻 QQ 连接")
@@ -92,6 +96,11 @@ def main() -> None:
     if args.command == "migrate":
         version = migrate(connect(settings.db_path))
         print(f"数据库已迁移到版本 {version}：{settings.db_path}")
+    elif args.command == "reset-account":
+        from minddock.api.auth import reset_accounts
+
+        removed = reset_accounts(connect(settings.db_path))
+        print(f"已删除 {removed} 个登录账号。重启面板后，日志里会打印新的初始化码。")
     elif args.command == "check":
         asyncio.run(_check(args.sections))
     elif args.command in ("bot", "worker"):

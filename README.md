@@ -59,4 +59,14 @@ bash /opt/minddock/deploy/install.sh minddock.example.com
 bash /opt/minddock/deploy/update.sh
 ```
 
-`install.sh` 会生成 `/opt/minddock/.env`（加密主密钥等，只在服务器上），配置宝塔 nginx 转发证书验证，并启动面板、OpenList 和 Caddy。面板地址为 `https://<域名>:8443`。QQ 机器人、AI 模型、夸克网盘、邮件通知都在面板的"设置"页填写。
+`install.sh` 会生成 `/opt/minddock/.env`（加密主密钥等，只在服务器上），配置宝塔 nginx 把 80 端口转给 Caddy（证书验证、跳转 8443），并启动面板、OpenList 和 Caddy。面板地址为 `https://<域名>:8443`。QQ 机器人、AI 模型、夸克网盘、邮件通知都在面板的"设置"页填写。
+
+在宝塔中管理：容器在"Docker → 容器编排"里显示为 `minddock`；域名可以在"网站 → Docker"里添加为反向代理网站（目标容器 `minddock-caddy-1`，端口 8081），代替 install.sh 写入的 nginx 配置。证书由 Caddy 管理，不要在宝塔里为该站点开启 SSL。
+
+忘记密码或丢失验证器时，在服务器上删除登录账号（笔记、设置等内容不受影响），再按日志里的新初始化码重新创建：
+
+```bash
+cd /opt/minddock
+docker compose exec panel python -m minddock reset-account
+docker compose restart panel && sleep 5 && docker compose logs panel | grep 初始化码
+```

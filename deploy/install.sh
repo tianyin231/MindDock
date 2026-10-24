@@ -46,12 +46,15 @@ if [[ " $resolved " != *" $public_ip "* ]]; then
   exit 1
 fi
 
-say "宝塔 nginx：80 端口转发证书验证并跳转到 8443"
-if [ -d /www/server/panel/vhost/nginx ]; then
-  sed "s/__DOMAIN__/$DOMAIN/g" deploy/nginx-site.conf > "/www/server/panel/vhost/nginx/$DOMAIN.conf"
+say "宝塔 nginx：80 端口转给 Caddy（证书验证与跳转 8443）"
+site_conf="/www/server/panel/vhost/nginx/$DOMAIN.conf"
+if [ -f "$site_conf" ]; then
+  echo "已存在 $site_conf（可能已在宝塔中添加为网站），保持不变"
+elif [ -d /www/server/panel/vhost/nginx ]; then
+  sed "s/__DOMAIN__/$DOMAIN/g" deploy/nginx-site.conf > "$site_conf"
   nginx -t && nginx -s reload
 else
-  echo "未找到宝塔 nginx，请自行把 80 端口的 /.well-known/acme-challenge/ 转发到 127.0.0.1:8081" >&2
+  echo "未找到宝塔 nginx，请自行把 80 端口反向代理到 127.0.0.1:8081" >&2
 fi
 
 if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then

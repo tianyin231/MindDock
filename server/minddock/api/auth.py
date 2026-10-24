@@ -102,6 +102,17 @@ def init_auth_state(db) -> AuthState:
     return state
 
 
+def reset_accounts(db) -> int:
+    """忘记密码或丢失验证器时使用：删除登录账号，会话和信任设备随之删除，内容与设置不受影响。
+    面板重启后会重新进入初始化流程。返回删除的账号数。"""
+    removed = db.execute("DELETE FROM users").rowcount
+    db.execute(
+        "INSERT INTO audit_log (at, action, target) VALUES (?, 'reset_accounts', ?)",
+        (now_iso(), str(removed)),
+    )
+    return removed
+
+
 def _state(request: Request) -> AuthState:
     return request.app.state.auth
 

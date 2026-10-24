@@ -3,6 +3,8 @@ import time
 import pyotp
 from conftest import PASSWORD, setup_account
 
+from minddock.api.auth import init_auth_state, reset_accounts
+
 
 def test_setup_requires_code_and_strong_password(client, app):
     assert client.get("/api/auth/state").json()["setup_required"] is True
@@ -111,3 +113,13 @@ def test_unsafe_requests_need_csrf_header(client):
 
 def test_settings_require_login(client):
     assert client.get("/api/settings").status_code == 401
+
+
+def test_reset_accounts_reopens_setup_and_drops_sessions(client, app):
+    setup_account(client, app)
+    db = app.state.db
+    assert reset_accounts(db) == 1
+    assert db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0
+    assert db.execute("SELECT COUNT(*) FROM trusted_devices").fetchone()[0] == 0
+    assert client.get("/api/auth/state").json()["authenticated"] is False
+    assert init_auth_state(db).setup_code is not None

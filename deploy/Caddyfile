@@ -1,9 +1,15 @@
 # 服务器的 443 被其他服务占用，MindDock 在 8443 提供 HTTPS。
-# 证书用 HTTP-01 方式申请：宝塔 nginx 把 80 端口上的验证请求转发到本容器的 80（映射为宿主 127.0.0.1:8081）。
+# 宝塔 nginx 把 80 端口上的请求全部反向代理到本容器的 80（映射为宿主 127.0.0.1:8081）：
+# 证书验证（HTTP-01）由 Caddy 优先处理，其余请求跳转到 8443。
 {
 	http_port 80
 	https_port 8443
 	admin off
+}
+
+# 自动跳转会指向默认的 443，这里显式跳到 8443
+http://{$MINDDOCK_DOMAIN} {
+	redir https://{$MINDDOCK_DOMAIN}:8443{uri} permanent
 }
 
 https://{$MINDDOCK_DOMAIN}:8443 {
