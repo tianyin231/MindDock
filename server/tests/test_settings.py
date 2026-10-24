@@ -6,6 +6,7 @@ from conftest import setup_account
 
 from minddock.integrations.openlist import OpenListClient
 from minddock.integrations.probes import probe_ai, probe_qq, probe_storage
+from minddock.settings_store import SettingsStore
 
 SECRET = "app-secret-value-9876"
 
@@ -43,6 +44,18 @@ def test_unknown_or_invalid_fields_are_rejected(client, app):
         client.put("/api/settings/notify", json={"values": {"smtp_port": "abc"}}).status_code == 422
     )
     assert client.put("/api/settings/unknown", json={"values": {}}).status_code == 422
+
+
+def test_quark_cookie_is_cleaned_and_must_carry_login_credential(client, app):
+    setup_account(client, app)
+    bad = client.put("/api/settings/storage", json={"values": {"quark_cookie": "__puus=t; b=2"}})
+    assert bad.status_code == 422 and "__pus" in bad.json()["detail"]
+
+    pasted = "Cookie: a=1; __puus=t;\n __pus=login-token; b=2"
+    resp = client.put("/api/settings/storage", json={"values": {"quark_cookie": pasted}})
+    assert resp.status_code == 200
+    stored = SettingsStore(app.state.db, app.state.cipher).get("storage")["quark_cookie"]
+    assert stored == "a=1; __puus=t; __pus=login-token; b=2"
 
 
 def test_test_endpoint_requires_configuration(client, app):

@@ -17,6 +17,15 @@ class OpenListError(RuntimeError):
     pass
 
 
+# 夸克 Cookie 失效（被退出登录、改密码等）时，夸克接口返回 "require login [guest]"，错误码 31001
+QUARK_LOGGED_OUT = "Cookie 已失效（被退出登录或过期），请重新登录夸克网页版并复制新的 Cookie"
+
+
+def quark_logged_out(message: str) -> bool:
+    text = message.lower()
+    return "require login" in text or "31001" in text
+
+
 class OpenListClient:
     def __init__(
         self, base_url: str, password: str, http: httpx2.AsyncClient, username: str = "admin"

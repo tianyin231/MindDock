@@ -4,8 +4,10 @@
 """
 
 import json
+import re
 import secrets
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -24,6 +26,27 @@ class Field:
     default: Any = None
     placeholder: str = ""
     help: str = ""
+    # 保存前整理并检查填写的值，不合格时抛出 SettingsError
+    normalize: Callable[[str], str] | None = None
+
+
+class SettingsError(ValueError):
+    pass
+
+
+def quark_cookie(value: str) -> str:
+    """去掉从开发者工具连带复制的 "Cookie:" 前缀和换行，并确认带有登录凭据 __pus。
+
+    实测夸克只认 __pus：__puus 每次请求都会换新、24 小时过期，缺了也会按 __pus 重新签发。
+    """
+    value = re.sub(r"^cookie\s*:\s*", "", value.strip(), flags=re.IGNORECASE)
+    value = " ".join(value.split())
+    if not re.search(r"(?:^|;)\s*__pus=[^;\s]", value):
+        raise SettingsError(
+            "Cookie 里没有登录凭据 __pus：请确认已登录夸克网页版，"
+            "并复制 drive-pc.quark.cn 请求里完整的 Cookie"
+        )
+    return value
 
 
 @dataclass(frozen=True)
@@ -79,7 +102,12 @@ SECTIONS: dict[str, Section] = {
                     "夸克 Cookie",
                     "secret",
                     required=True,
-                    help="用 Chrome 登录 pan.quark.cn，按 F12 在网络请求头里复制 Cookie",
+                    help=(
+                        "建议在浏览器无痕窗口登录 pan.quark.cn，按 F12 在网络面板中找到"
+                        " drive-pc.quark.cn 的请求，复制请求头里的 Cookie；复制后直接关闭窗口，"
+                        "不要点退出登录，否则这份 Cookie 会失效"
+                    ),
+                    normalize=quark_cookie,
                 ),
                 Field("folder", "归档目录", default="MindDock", help="夸克根目录下的文件夹名"),
             ),
@@ -100,10 +128,6 @@ SECTIONS: dict[str, Section] = {
         ),
     )
 }
-
-
-class SettingsError(ValueError):
-    pass
 
 
 def _row_key(section: str) -> str:
@@ -207,7 +231,8 @@ class SettingsStore:
         if f.kind == "secret":
             if not isinstance(value, str) or not value.strip():
                 raise SettingsError(f"{f.label}不能为空")
-            return self._cipher.encrypt(value.strip())
+            value = f.normalize(value) if f.normalize else value.strip()
+            return self._cipher.encrypt(value)
         if f.kind == "bool":
             if not isinstance(value, bool):
                 raise SettingsError(f"{f.label}必须是开关值")

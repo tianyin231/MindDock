@@ -10,7 +10,7 @@ from minddock.bot import OWNER_KEY
 from minddock.config import Settings
 from minddock.db import connect, migrate, now_iso
 from minddock.ingest import Incoming, IncomingAttachment, ingest
-from minddock.integrations.openlist import OpenListError
+from minddock.integrations.openlist import QUARK_LOGGED_OUT, OpenListError
 from minddock.jobs import claim, enqueue
 from minddock.security import Cipher
 from minddock.settings_store import SettingsStore
@@ -34,6 +34,8 @@ class FakeOpenList:
             raise OpenListError(self.fail)
 
     async def list_dir(self, path):
+        if self.fail:
+            raise OpenListError(self.fail)
         return [
             {"name": p.rsplit("/", 1)[1], "size": size}
             for p, size in self.files.items()
@@ -64,7 +66,7 @@ def conn(tmp_path):
 @pytest.fixture
 def archiver(conn, tmp_path):
     store = SettingsStore(conn, Cipher(b"k" * 32))
-    store.update("storage", {"quark_cookie": "c", "folder": "MindDock"})
+    store.update("storage", {"quark_cookie": "__pus=c", "folder": "MindDock"})
     a = storage.Archiver(
         conn, store, None, Settings(data_dir=tmp_path / "data", tz=TZ), FakeNotifier()
     )
@@ -140,17 +142,64 @@ def test_size_mismatch_is_a_failure(conn, archiver):
 
 def test_repeated_failures_alert_once_and_recover(conn, archiver):
     file_id = downloaded_file(conn, archiver.config.data_dir)
-    archiver.fake.fail = "require login [quark]"
-    for _ in range(4):
+    archiver.fake.fail = "无法连接 OpenList：timed out"
+    for _ in range(2):
+        with pytest.raises(OpenListError):
+            asyncio.run(archiver.upload(file_id))
+    assert storage.health(conn)["state"] == "ok" and not archiver.notifier.sent  # 偶发问题不打扰
+    for _ in range(2):
         with pytest.raises(OpenListError):
             asyncio.run(archiver.upload(file_id))
     state = storage.health(conn)
     assert state["state"] == "error" and state["failures"] == 4
-    assert len(archiver.notifier.sent) == 1 and "Cookie" in archiver.notifier.sent[0]
+    assert len(archiver.notifier.sent) == 1 and "连续 3 次" in archiver.notifier.sent[0]
 
     archiver.fake.fail = None
     asyncio.run(archiver.upload(file_id))
     assert storage.health(conn) == {"state": "ok", "failures": 0}
+    assert storage.verified(conn)["ok"]
+
+
+def test_logged_out_cookie_alerts_immediately(conn, archiver):
+    file_id = downloaded_file(conn, archiver.config.data_dir)
+    archiver.fake.fail = "failed to make dir: require login [guest]"
+    with pytest.raises(OpenListError):
+        asyncio.run(archiver.upload(file_id))
+    state = storage.health(conn)
+    assert (state["state"], state["reason"], state["error"]) == ("error", "login", QUARK_LOGGED_OUT)
+    assert len(archiver.notifier.sent) == 1 and "登录已失效" in archiver.notifier.sent[0]
+
+
+def test_login_check_runs_when_quark_has_been_quiet(conn, archiver):
+    assert storage.check_due(conn)  # 从没检查过
+    asyncio.run(archiver.check_if_due())
+    assert storage.verified(conn)["ok"] and not storage.check_due(conn)
+
+    # 6 小时内和夸克打过交道（例如上传成功）就不用再检查
+    kv_set(conn, storage.VERIFIED_KEY, {"at": now_iso(-5 * 3600), "ok": True})
+    assert not storage.check_due(conn)
+    kv_set(conn, storage.VERIFIED_KEY, {"at": now_iso(-7 * 3600), "ok": True})
+    assert storage.check_due(conn)
+
+    # Cookie 失效：立即告警；之后每小时再查一次，重复失败不重复告警
+    archiver.fake.fail = "require login [guest]"
+    assert asyncio.run(archiver.check_login()) is False
+    assert storage.health(conn)["reason"] == "login" and len(archiver.notifier.sent) == 1
+    assert not storage.check_due(conn)
+    kv_set(conn, storage.VERIFIED_KEY, {"at": now_iso(-3601), "ok": False})
+    asyncio.run(archiver.check_if_due())
+    assert storage.health(conn)["failures"] == 2 and len(archiver.notifier.sent) == 1
+
+    archiver.fake.fail = None
+    assert asyncio.run(archiver.check_login()) is True
+    assert storage.health(conn) == {"state": "ok", "failures": 0}
+
+
+def test_login_check_does_not_hide_upload_problems(conn, archiver):
+    problem = {"state": "error", "failures": 3, "error": "空间不足", "reason": "error"}
+    kv_set(conn, storage.HEALTH_KEY, {**problem, "source": "upload"})
+    asyncio.run(archiver.check_login())
+    assert storage.health(conn)["state"] == "error"  # 要等上传成功才算恢复
 
 
 def test_new_settings_requeue_failed_uploads(conn, archiver):
@@ -160,8 +209,9 @@ def test_new_settings_requeue_failed_uploads(conn, archiver):
     archiver.watch_settings()  # 设置没变：不动
     assert file_row(conn, file_id)["upload_status"] == "failed"
 
-    archiver.store.update("storage", {"quark_cookie": "new"})
+    archiver.store.update("storage", {"quark_cookie": "__pus=new"})
     archiver.watch_settings()
+    assert storage.check_due(conn)  # 换了 Cookie：下次例行维护立即检查
     assert file_row(conn, file_id)["upload_status"] == "pending"
     assert storage.health(conn)["state"] == "ok"
     assert (
@@ -193,7 +243,7 @@ def test_storage_api(client, app):
 
     state = client.get("/api/storage").json()
     assert state["configured"] is False and state["counts"]["failed"] == 1
-    assert state["localFiles"] == 1 and state["keepDays"] == 7
+    assert state["localFiles"] == 1 and state["keepDays"] == 7 and state["lastCheck"] is None
 
     item = client.post(f"/api/files/{file_id}/upload").json()
     assert item["attachments"][0]["uploadStatus"] == "pending"

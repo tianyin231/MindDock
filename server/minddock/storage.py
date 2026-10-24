@@ -4,6 +4,8 @@
   /MindDock/originals/2026/10/20261023-153012_A3F9_原文件名.jpg
 - 上传前先看远端是否已有同样大小的文件（上次已传完但没来得及记录），有就直接记为已上传。
 - 上传后核对远端大小，一致才记为已上传；本地原件在确认上传前绝不删除。
+- 超过 6 小时没和夸克打过交道就列一次目录，确认 Cookie 仍然有效；失效时立即告警，
+  不必等到下次上传失败才发现。
 """
 
 import logging
@@ -20,7 +22,13 @@ import httpx2
 
 from minddock.config import Settings
 from minddock.db import now_iso
-from minddock.integrations.openlist import QUARK_MOUNT, OpenListClient, OpenListError
+from minddock.integrations.openlist import (
+    QUARK_LOGGED_OUT,
+    QUARK_MOUNT,
+    OpenListClient,
+    OpenListError,
+    quark_logged_out,
+)
 from minddock.items import item_to_api
 from minddock.jobs import enqueue, retry_now
 from minddock.settings_store import SettingsStore
@@ -33,7 +41,10 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 HEALTH_KEY = "storage.health"
-ALERT_AFTER = 3  # 连续失败这么多次才告警，避免偶发网络问题打扰
+VERIFIED_KEY = "storage.verified"  # 最近一次和夸克的交互：{"at": 时间, "ok": 是否成功}
+ALERT_AFTER = 3  # 连续失败这么多次才告警，避免偶发网络问题打扰；登录失效是确定的，立即告警
+CHECK_EVERY = 6 * 3600
+RECHECK_AFTER_FAILURE = 3600
 _UNSAFE = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 
 
@@ -68,6 +79,22 @@ def health(conn: sqlite3.Connection) -> dict[str, Any]:
 
 def reset_health(conn: sqlite3.Connection) -> None:
     kv_set(conn, HEALTH_KEY, {"state": "ok", "failures": 0})
+
+
+def verified(conn: sqlite3.Connection) -> dict[str, Any] | None:
+    return kv_get(conn, VERIFIED_KEY)
+
+
+def _mark_verified(conn: sqlite3.Connection, ok: bool) -> None:
+    kv_set(conn, VERIFIED_KEY, {"at": now_iso(), "ok": ok})
+
+
+def check_due(conn: sqlite3.Connection) -> bool:
+    last = verified(conn)
+    if last is None:
+        return True
+    wait = CHECK_EVERY if last["ok"] else RECHECK_AFTER_FAILURE
+    return parse_iso(last["at"]) <= parse_iso(now_iso(-wait))
 
 
 # ---- 队列 ----
@@ -209,6 +236,7 @@ class Archiver:
         self._seen_version = version
         if self.store.configured("storage"):
             reset_health(self.conn)
+            kv_set(self.conn, VERIFIED_KEY, None)  # 下次例行维护时立即用新 Cookie 检查一次
             count = retry_failed(self.conn) + enqueue_pending(self.conn)
             if count:
                 log.info("网盘设置已更新，%d 个文件重新排队上传", count)
@@ -255,9 +283,33 @@ class Archiver:
             (path, now_iso(), file_id),
         )
         _changed(self.conn, file_id)
+        _mark_verified(self.conn, True)
         if health(self.conn).get("failures"):
             reset_health(self.conn)
         log.info("已上传夸克：文件 %s（%d 字节）", file_id, size)
+
+    async def check_login(self) -> bool:
+        """列一次夸克根目录（不走 OpenList 缓存），确认 Cookie 仍然有效。"""
+        try:
+            client = await self.client()
+            await client.list_dir(QUARK_MOUNT)
+        except (StorageError, OpenListError, httpx2.HTTPError) as exc:
+            _mark_verified(self.conn, False)
+            await self._failed(str(exc) or type(exc).__name__, source="check")
+            log.warning("夸克登录状态检查失败：%s", exc)
+            return False
+        _mark_verified(self.conn, True)
+        # 只清除检查自己记下的失败和登录失效；上传本身的问题（如空间不足）要等上传成功才算恢复
+        state = health(self.conn)
+        if state.get("failures") and (
+            state.get("source") == "check" or state.get("reason") == "login"
+        ):
+            reset_health(self.conn)
+        return True
+
+    async def check_if_due(self) -> None:
+        if self.store.configured("storage") and check_due(self.conn):
+            await self.check_login()
 
     @staticmethod
     async def _mkdir(client: OpenListClient, path: str) -> None:
@@ -272,21 +324,30 @@ class Archiver:
         entries = await client.list_dir(parent)
         return any(e.get("name") == name and e.get("size") == size for e in entries)
 
-    async def _failed(self, error: str) -> None:
+    async def _failed(self, error: str, *, source: str = "upload") -> None:
+        logged_out = quark_logged_out(error)
         state = health(self.conn)
         state["failures"] = state.get("failures", 0) + 1
-        state["error"] = error[:300]
+        state["error"] = QUARK_LOGGED_OUT if logged_out else error[:300]
+        state["reason"] = "login" if logged_out else "error"
+        state["source"] = source
         state["since"] = state.get("since") or now_iso()
-        if state["failures"] >= ALERT_AFTER:
+        if logged_out or state["failures"] >= ALERT_AFTER:
             state["state"] = "error"
         alert = state["state"] == "error" and not state.get("alerted")
         if alert:
             state["alerted"] = True
         kv_set(self.conn, HEALTH_KEY, state)
         if alert and self.notifier:
+            if logged_out:
+                headline = "⚠️ 夸克网盘的登录已失效（Cookie 被退出或过期）"
+                subject = "⚠️ MindDock：夸克网盘登录已失效"
+            else:
+                headline = f"⚠️ 夸克网盘连续 {state['failures']} 次出错：{state['error']}"
+                subject = "⚠️ MindDock：夸克网盘上传失败"
             text = (
-                f"⚠️ 夸克网盘连续 {state['failures']} 次上传失败：{state['error']}\n"
+                f"{headline}\n"
                 "新收到的文件会先保存在服务器上；请在面板「设置 → 夸克网盘」检查或更新 Cookie，"
                 "之后会自动补传。"
             )
-            await self.notifier.send(text, email_subject="⚠️ MindDock：夸克网盘上传失败")
+            await self.notifier.send(text, email_subject=subject)

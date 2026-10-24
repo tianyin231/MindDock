@@ -1,8 +1,8 @@
 import { RotateCwIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { useRetryFailedUploads, useStorage } from '@/api/storage'
+import { healthTitle, useRetryFailedUploads, useStorage } from '@/api/storage'
 import { Button } from '@/components/ui/button'
-import { fileSize } from '@/lib/format'
+import { fileSize, relativeTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 /** 夸克网盘设置卡片下方：健康状态、上传统计、服务器暂存占用 */
@@ -11,7 +11,7 @@ export function StorageStatus() {
   const retry = useRetryFailedUploads()
   if (!data?.configured) return null
 
-  const { health, counts } = data
+  const { health, counts, lastCheck } = data
   const broken = health.state === 'error'
   const stats = [
     { label: '待上传', value: counts.pending + counts.uploading },
@@ -24,11 +24,15 @@ export function StorageStatus() {
       <div className="flex items-start gap-2">
         <span className={cn('mt-1.5 size-2 shrink-0 rounded-full', broken ? 'bg-destructive' : 'bg-emerald-500')} />
         <div className="min-w-0">
-          <p className="font-medium">{broken ? '上传失败' : '网盘正常'}</p>
-          {broken && (
+          <p className="font-medium">{broken ? healthTitle(health) : '网盘正常'}</p>
+          {broken ? (
             <p className="text-xs break-words text-muted-foreground">
               {health.error}。新文件会先保存在服务器上，更新 Cookie 后自动补传
             </p>
+          ) : (
+            lastCheck?.ok && (
+              <p className="text-xs text-muted-foreground">Cookie 有效，上次确认：{relativeTime(lastCheck.at)}</p>
+            )
           )}
         </div>
       </div>

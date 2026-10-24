@@ -101,6 +101,7 @@ class Worker:
                     self.config.staging_keep_days,
                     self.config.min_free_ratio,
                 )
+                await self.archiver.check_if_due()
             except Exception:
                 log.exception("例行维护出错")
             await asyncio.sleep(600)

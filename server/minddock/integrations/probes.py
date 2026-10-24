@@ -8,7 +8,13 @@ from typing import Any
 import httpx2
 
 from minddock.integrations.email import send_email
-from minddock.integrations.openlist import QUARK_MOUNT, OpenListClient, OpenListError
+from minddock.integrations.openlist import (
+    QUARK_LOGGED_OUT,
+    QUARK_MOUNT,
+    OpenListClient,
+    OpenListError,
+    quark_logged_out,
+)
 
 QQ_TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken"
 QQ_API = "https://api.sgroup.qq.com"
@@ -116,8 +122,11 @@ async def probe_storage(cfg: dict[str, Any], openlist: OpenListClient) -> ProbeR
     try:
         await openlist.login()
         storage = await openlist.ensure_quark(cfg["quark_cookie"])
-        if storage.get("status") != "work":
-            return ProbeResult(False, f"夸克挂载失败：{storage.get('status') or '未知原因'}")
+        status = storage.get("status") or "未知原因"
+        if status != "work":
+            if quark_logged_out(status):
+                return ProbeResult(False, QUARK_LOGGED_OUT)
+            return ProbeResult(False, f"夸克挂载失败：{status}")
 
         folder = (cfg.get("folder") or "MindDock").strip("/")
         root = f"{QUARK_MOUNT}/{folder}"
@@ -133,7 +142,7 @@ async def probe_storage(cfg: dict[str, Any], openlist: OpenListClient) -> ProbeR
         found = any(e["name"] == name and e.get("size") == len(payload) for e in entries)
         await openlist.remove(root, [name])
     except OpenListError as exc:
-        return ProbeResult(False, str(exc))
+        return ProbeResult(False, QUARK_LOGGED_OUT if quark_logged_out(str(exc)) else str(exc))
 
     if not found:
         return ProbeResult(False, "测试文件上传后未在夸克中找到")

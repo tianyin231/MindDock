@@ -17,6 +17,7 @@ async def storage_state(request: Request) -> dict:
     return {
         "configured": SettingsStore(db, request.app.state.cipher).configured("storage"),
         "health": storage.health(db),
+        "lastCheck": storage.verified(db),
         "keepDays": config.staging_keep_days,
         **storage.stats(db, config.data_dir),
     }
