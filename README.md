@@ -72,6 +72,31 @@ bash /opt/minddock/deploy/update.sh
 
 在宝塔中管理：容器在"Docker → 容器编排"里显示为 `minddock`；域名可以在"网站 → Docker"里添加为反向代理网站（目标容器 `minddock-caddy-1`，端口 8081），代替 install.sh 写入的 nginx 配置。
 
+### 备份与迁移
+
+备份是用 age 公钥加密的压缩包，内容包括数据库快照、密钥类文件的密文、还没上传夸克的原件、缩略图和部署配置（`.env` 里的加密主密钥等）；已上传夸克的原件不重复备份，恢复后自动从夸克取回。服务器上只有公钥，第一次安装（或第一次运行 `backup.sh`）时生成的私钥写在 `/root/minddock-backup-key.txt`，**存进密码管理器后删除这个文件**，没有它无法解密备份。
+
+```bash
+# 立即备份（保存在 /opt/minddock/data/panel/backups/，本地保留最近 7 份）
+bash /opt/minddock/deploy/backup.sh
+
+# 恢复演练：只解密并校验全部内容，不改动现有数据（私钥从标准输入读）
+cd /opt/minddock && docker compose exec -T panel python -m minddock restore --check \
+  /data/backups/minddock-20261025-031500.tar.gz.age < /root/minddock-backup-key.txt
+```
+
+迁移到新服务器：
+
+1. 旧服务器上运行 `backup.sh`，把生成的备份文件复制到新服务器；
+2. 域名的 A 记录改到新服务器的 IP；
+3. 新服务器上运行（会提示粘贴备份私钥，也可以用 `--key 私钥文件`）：
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/tianyin231/MindDock/main/deploy/install.sh | bash -s -- minddock.example.com --restore /root/minddock-20261025-031500.tar.gz.age
+   ```
+4. 停掉旧服务器上的 MindDock（`docker compose down`），否则两边会同时收 QQ 消息；QQ 开放平台若设了 IP 白名单，改成新 IP。
+
+不依赖 MindDock 也能解开备份：`age -d -i 私钥文件 备份文件 | tar -xz`。
+
 忘记密码或丢失验证器时，在服务器上删除登录账号（笔记、设置等内容不受影响），再按日志里的新初始化码重新创建：
 
 ```bash

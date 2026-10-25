@@ -5,6 +5,8 @@
 #
 # 选项：
 #   --mode auto|bt|direct  入口模式。auto（默认）：有宝塔 nginx 用宝塔模式，否则 80/443 空闲时用独立模式
+#   --restore <备份文件>    迁移：从 backup.sh 生成的加密备份恢复全部数据与配置
+#   --key <私钥文件>        备份私钥（不指定时会提示粘贴）
 set -euo pipefail
 
 DIR=/opt/minddock
@@ -15,17 +17,36 @@ die() { printf '\033[1;31m错误：\033[0m%s\n' "$*" >&2; exit 1; }
 
 DOMAIN=""
 MODE=auto
+RESTORE=""
+KEY_FILE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --mode) MODE="${2:?--mode 需要 auto、bt 或 direct}"; shift 2 ;;
-    -h|--help) sed -n '2,8p' "$0"; exit 0 ;;
+    --restore) RESTORE="$(readlink -f "${2:?--restore 需要备份文件路径}")"; shift 2 ;;
+    --key) KEY_FILE="${2:?--key 需要私钥文件路径}"; shift 2 ;;
+    -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
     -*) die "未知选项：$1" ;;
     *) DOMAIN="$1"; shift ;;
   esac
 done
-[ -n "$DOMAIN" ] || die "用法：install.sh <域名> [--mode auto|bt|direct]"
+[ -n "$DOMAIN" ] || die "用法：install.sh <域名> [--mode auto|bt|direct] [--restore <备份文件> [--key <私钥文件>]]"
 [ "$(id -u)" -eq 0 ] || die "请以 root 运行"
 case "$MODE" in auto|bt|direct) ;; *) die "--mode 只能是 auto、bt 或 direct" ;; esac
+if [ -n "$RESTORE" ]; then
+  [ -f "$RESTORE" ] || die "找不到备份文件：$RESTORE"
+  [ ! -f "$DIR/data/panel/minddock.db" ] || die "$DIR/data/panel 里已经有数据。恢复会覆盖它们：确认的话先把这个目录移走再运行"
+  # 先拿到私钥，免得装了一半才发现没有
+  if [ -n "$KEY_FILE" ]; then
+    IDENTITY=$(cat "$KEY_FILE")
+  elif [ -n "${MINDDOCK_BACKUP_IDENTITY:-}" ]; then
+    IDENTITY=$MINDDOCK_BACKUP_IDENTITY
+  else
+    printf '请粘贴备份私钥（AGE-SECRET-KEY-… 那一行，输入不会显示），回车结束：' > /dev/tty
+    read -rs IDENTITY < /dev/tty
+    echo > /dev/tty
+  fi
+  grep -q 'AGE-SECRET-KEY-' <<<"$IDENTITY" || die "没有读到备份私钥（以 AGE-SECRET-KEY- 开头）"
+fi
 
 BT_NGINX=/www/server/panel/vhost/nginx
 port_holder() { ss -Hltnp "sport = :$1" 2>/dev/null | grep -v docker-proxy || true; }
@@ -169,10 +190,33 @@ elif command -v firewall-cmd >/dev/null && firewall-cmd --state >/dev/null 2>&1;
   firewall-cmd --reload >/dev/null
 fi
 
+# ---- 恢复与备份密钥 ----
+
+say "拉取镜像"
+docker compose pull
+
+if [ -n "$RESTORE" ]; then
+  say "从备份恢复：$RESTORE"
+  tag=$(grep '^MINDDOCK_TAG=' .env | cut -d= -f2- || true)
+  printf '%s\n' "$IDENTITY" | docker run --rm -i \
+    -v "$DIR/data/panel:/data" -v "$RESTORE:/restore/backup.age:ro" \
+    "ghcr.io/tianyin231/minddock:${tag:-main}" python -m minddock restore /restore/backup.age
+  unset IDENTITY
+  # 加密主密钥、备份公钥等沿用旧服务器的；域名与入口模式以这次安装为准
+  for key in MINDDOCK_SECRET_KEY MINDDOCK_OPENLIST_ADMIN_PASSWORD MINDDOCK_BACKUP_RECIPIENT MINDDOCK_TAG TZ; do
+    value=$(grep "^$key=" data/panel/restored.env | cut -d= -f2- || true)
+    if [ -n "$value" ]; then set_env "$key" "$value"; fi
+  done
+  chmod 600 .env
+  rm -f data/panel/restored.env
+  docker compose pull -q
+fi
+
+bash deploy/backup.sh --key-only
+
 # ---- 启动 ----
 
-say "拉取镜像并启动"
-docker compose pull
+say "启动"
 docker compose up -d --remove-orphans
 
 say "同步 OpenList 管理员密码"
@@ -195,6 +239,16 @@ for _ in $(seq 1 20); do
 done
 
 say "完成：https://$DOMAIN"
-if [ -n "$code" ]; then
+if [ -n "$RESTORE" ]; then
+  echo "已从备份恢复，用原来的账号登录。还需要你确认："
+  echo "  1. 旧服务器上的 MindDock 已经停止（cd /opt/minddock && docker compose down），否则两边会同时收 QQ 消息"
+  echo "  2. 如果在 QQ 开放平台设置了 IP 白名单，把本机 IP $public_ip 加进去"
+  echo "  3. 已上传夸克的原件会在需要时自动从夸克取回，不用另外搬"
+elif [ -n "$code" ]; then
   echo "首次打开面板时需要的 $code"
 fi
+for key in /root/minddock-backup-key*.txt; do
+  if [ -f "$key" ]; then
+    printf '\033[1;33m提醒：备份私钥还在 %s，存进密码管理器后请删除它\033[0m\n' "$key"
+  fi
+done

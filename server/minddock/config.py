@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     staging_keep_days: int = 7
     min_free_ratio: float = 0.2
 
+    # 备份用的 age 公钥（install.sh 生成，私钥只给你本人保存）；为空时不做备份
+    backup_recipient: str = ""
+    backup_keep_local: int = 7
+
     # 由镜像构建时写入
     version: str = "dev"
     commit: str = ""
