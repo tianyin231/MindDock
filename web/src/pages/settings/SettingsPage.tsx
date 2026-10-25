@@ -35,6 +35,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { relativeTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { BackupCard } from './BackupCard'
 import { QQBinding } from './QQBinding'
 import { StorageStatus } from './StorageStatus'
 
@@ -70,6 +71,7 @@ export function SettingsPage() {
             />
           ))}
 
+      <BackupCard />
       <AccountCard />
       <AboutCard />
     </div>

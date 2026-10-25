@@ -37,7 +37,7 @@
 │  worker   后台任务：抓网页 / AI 归类整理 / 缩略图 / 上传夸克 / 备份 / 提醒调度 │
 │  panel    JSON 接口 + SSE 实时推送 + 托管前端页面                        │
 │  openlist 夸克 cookie 驱动 → WebDAV（仅容器内网）                      │
-│  caddy    面板 HTTPS 入口（宝塔 nginx 在 443 按域名分流给它）         │
+│  caddy    面板 HTTPS 入口（独立监听 80/443，或由宝塔 nginx 分流给它）  │
 │                                                                      │
 │  data/minddock.db（SQLite）  data/staging/  data/thumbs/  data/vault/ │
 └──────────────────────────────────────────────────────────────────────┘
@@ -52,7 +52,7 @@
 | `worker` | 执行任务队列中的所有后台任务，调度到期提醒 | 无 |
 | `panel` | JSON 接口、SSE 实时事件、面板上传、托管前端构建产物 | 仅经 `caddy` |
 | `openlist` | 把夸克挂载为 WebDAV | 无；管理界面经 SSH 隧道访问 |
-| `caddy` | HTTPS 与证书自动续期 | 仅本机端口；宝塔 nginx 在 443 按 SNI 转来本域名的连接（不解密，PROXY protocol 带真实 IP），80 端口整体反向代理给它 |
+| `caddy` | HTTPS 与证书自动续期 | 独立模式：直接监听宿主 80 / 443；宝塔模式：仅本机端口，宝塔 nginx 在 443 按 SNI 转来本域名的连接（不解密，PROXY protocol 带真实 IP），80 端口整体反向代理给它 |
 
 `bot`、`worker`、`panel` 使用同一份代码、同一个镜像，只是启动命令不同；共享一个 SQLite 数据库（WAL 模式，设置 `busy_timeout`）。三个进程之间通过数据库表传递事件（例如 `events` 表），`panel` 读取后经 SSE 推给浏览器。
 
@@ -337,7 +337,7 @@ SQLite FTS5 使用 `trigram` 分词器，支持 3 字及以上的任意子串检
 
 单个镜像（多阶段构建：Node 阶段编译前端 → `python:3.12-slim-bookworm` 运行），跑 `bot`、`worker`、`panel` 三个服务；另有 Caddy 2 与 OpenList。所有镜像与依赖固定版本。
 
-**版本与发布用 git 驱动**：推送 `main` 后 GitHub Actions 先跑后端测试、前端检查与构建，再构建镜像发布到 `ghcr.io/tianyin231/minddock`（标签 `main` 与 `sha-xxxxxxx`）；打 `v0.x.y` 标签发布正式版本（标签 `0.x.y` 与 `latest`）。服务器内存紧张，只拉取镜像、不在本机编译；`deploy/update.sh` 负责拉代码、拉镜像、重启。
+**版本与发布用 git 驱动**：推送 `main` 后 GitHub Actions 先跑后端测试、前端检查与构建，再构建镜像发布到 `ghcr.io/tianyin231/minddock`（标签 `main` 与 `sha-xxxxxxx`）；打 `v0.x.y` 标签发布正式版本（标签 `0.x.y` 与 `latest`）。服务器内存紧张，只拉取镜像、不在本机编译；`deploy/install.sh` 一条命令完成首次部署（缺 Docker 自动安装，按有无宝塔自动选择入口模式，带 `--restore` 时从备份恢复），`deploy/update.sh` 负责拉代码、拉镜像、重启。
 
 ## 11. 数据模型（SQLite）
 
@@ -417,8 +417,9 @@ MindDock/
 | `MINDDOCK_SECRET_KEY` | 主密钥：加密面板设置中的密钥字段与 TOTP 种子 |
 | `MINDDOCK_OPENLIST_ADMIN_PASSWORD` | 内置 OpenList 的管理员密码 |
 | `TZ` | 时区，默认 `Asia/Shanghai` |
-
-备份（M1）会额外加入 `BACKUP_AGE_RECIPIENT` 等配置。
+| `MINDDOCK_MODE` | 入口模式：`direct`（Caddy 直接监听 80 / 443）或 `bt`（宝塔 nginx 转发） |
+| `MINDDOCK_CADDYFILE` / `MINDDOCK_HTTPS_BIND` / `MINDDOCK_HTTP_BIND` | 独立模式下由 install.sh 写入；宝塔模式用 compose 里的默认值 |
+| `MINDDOCK_BACKUP_RECIPIENT` | 备份用的 age 公钥；私钥只交给你本人保存 |
 
 ### 12.4 服务器基线
 
@@ -430,13 +431,18 @@ MindDock/
 
 | 内容 | 方式 | 去向 |
 | --- | --- | --- |
-| 数据库 | 每日 03:15 执行 `sqlite3 .backup`，再做 `PRAGMA integrity_check` | 与下两项一起打包 |
-| 密钥类文件密文 | `data/vault/` 整体打包 | 同上 |
-| 配置 | `.env`、`compose.yaml`、OpenList 配置 | 同上 |
-| 备份包 | 用 age 公钥加密 | 本地保留 7 份；夸克与 R2 各保留 30 份日备 + 12 份月备 |
+| 数据库 | 每天 03:15 后的例行维护里用 SQLite 在线备份做快照，再做 `PRAGMA integrity_check`；从没备份过时立即做一份 | 与下几项一起打包 |
+| 密钥类文件密文 | `data/vault/` 中被引用的密文 | 同上 |
+| 原件与缩略图 | 还没上传夸克的原件、全部缩略图；已上传的原件不重复备份 | 同上 |
+| 部署配置 | `.env` 中的加密主密钥、OpenList 密码、备份公钥、镜像标签 | 同上（`deploy.env`） |
+| 备份包 | tar.gz 用 age 公钥加密（pyrage，标准格式，可用 age / rage 直接解开），附 manifest 记录每个文件的 SHA-256 | 服务器保留 7 份；夸克 `/{归档目录}/backups/` 保留最近 30 份 + 有备份的最近 12 个月每月一份；R2 待接入 |
 | 原件 | 夸克单份 + 本地短期暂存 | M1 之后可对标记为"重要"的条目额外复制到 R2 |
 
-**恢复演练**每月一次：在临时目录解密备份 → 完整性检查 → 只读启动面板 → 随机抽 5 条打开原件并核对 SHA-256。
+备份失败时 QQ / 邮件告警一次，之后每小时重试；面板「设置 → 备份」显示状态，可立即备份、下载加密的备份文件。
+
+**恢复**：`install.sh <域名> --restore <备份>` 在新服务器上一条命令完成——先解密到临时目录，逐个核对 SHA-256、数据库完整性与版本，全部通过才写入；沿用旧服务器的加密主密钥与备份公钥；已上传夸克的原件改为按需从夸克取回。
+
+**恢复演练**每月一次：`python -m minddock restore --check <备份>` 在临时目录完整解密并核对全部校验值，不改动现有数据。
 
 ## 14. 风险与兜底
 
@@ -489,7 +495,7 @@ MindDock/
 
 ### M1：可靠使用
 
-- 每日加密备份到夸克与 R2，完成一次完整恢复演练；
+- 每日加密备份到夸克与 R2，完成一次完整恢复演练（已完成：加密备份、上传夸克、一条命令恢复与演练；待做：R2）；
 - 登录限速、审计日志、磁盘与任务失败告警；
 - PWA：可添加到手机桌面；
 - 真实使用一到两周后，调整归类提示词。

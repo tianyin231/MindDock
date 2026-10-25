@@ -1,4 +1,4 @@
-"""后台任务执行：下载附件、上传夸克、AI 整理、到点提醒，并在需要时给 QQ 发确认消息。"""
+"""后台任务执行：下载附件、上传夸克、AI 整理、到点提醒、每日备份，并在需要时给 QQ 发确认消息。"""
 
 import asyncio
 import hashlib
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import httpx2
 
-from minddock import reminders
+from minddock import backup_runner, reminders
 from minddock.config import Settings
 from minddock.items import item_to_api
 from minddock.jobs import claim, complete, enqueue, fail, requeue_stale
@@ -102,6 +102,7 @@ class Worker:
                     self.config.min_free_ratio,
                 )
                 await self.archiver.check_if_due()
+                await backup_runner.run_if_due(self)
             except Exception:
                 log.exception("例行维护出错")
             await asyncio.sleep(600)
@@ -212,10 +213,16 @@ async def handle_remind(worker: Worker, reminder_id: str) -> None:
     )
 
 
+async def handle_backup(worker: Worker, _ref: str) -> None:
+    """面板上的"立即备份"。失败已记录在备份状态里，不按普通任务重试。"""
+    await backup_runner.run(worker)
+
+
 HANDLERS: dict[str, Callable[[Worker, str], Awaitable[None]]] = {
     "organize": handle_organize,
     "download": handle_download,
     "remind": handle_remind,
     "upload": handle_upload,
     "thumbnail": handle_thumbnail,
+    "backup": handle_backup,
 }

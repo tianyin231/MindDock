@@ -265,13 +265,8 @@ class Archiver:
             path = remote_path(
                 folder_of(self.store.get("storage")), row, row["short_code"], self.config.tz
             )
-            parent, name = path.rsplit("/", 1)
             size = local.stat().st_size
-            await self._mkdir(client, parent)
-            if not await self._has(client, parent, name, size):
-                await client.put_file(path, local, size)
-                if not await self._has(client, parent, name, size):
-                    raise StorageError("上传后在夸克中没有找到大小一致的文件")
+            await self.put_verified(client, path, local)
         except (StorageError, OpenListError, httpx2.HTTPError, OSError) as exc:
             self._set_status(file_id, "failed")
             await self._failed(str(exc) or type(exc).__name__)
@@ -287,6 +282,16 @@ class Archiver:
         if health(self.conn).get("failures"):
             reset_health(self.conn)
         log.info("已上传夸克：文件 %s（%d 字节）", file_id, size)
+
+    async def put_verified(self, client: OpenListClient, path: str, local: Path) -> None:
+        """上传到夸克并核对大小；远端已有大小一致的同名文件就跳过。"""
+        parent, name = path.rsplit("/", 1)
+        size = local.stat().st_size
+        await self._mkdir(client, parent)
+        if not await self._has(client, parent, name, size):
+            await client.put_file(path, local, size)
+            if not await self._has(client, parent, name, size):
+                raise StorageError("上传后在夸克中没有找到大小一致的文件")
 
     async def check_login(self) -> bool:
         """列一次夸克根目录（不走 OpenList 缓存），确认 Cookie 仍然有效。"""
