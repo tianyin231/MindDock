@@ -1,24 +1,21 @@
 import { motion, useSpring, useTransform } from 'motion/react'
-import { useEffect, useId, type ComponentType, type ReactNode } from 'react'
+import { useEffect, type ComponentType, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import type { PartitionKey } from '@/api/types'
 import { PARTITION } from '@/lib/partitions'
+import { useTheme } from '@/lib/theme-context'
 
 export function Logo({ className }: { className?: string }) {
-  const id = useId()
+  const { resolvedTheme } = useTheme()
   return (
-    <svg viewBox="0 0 32 32" className={className} aria-hidden="true">
-      <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#8b5cf6" />
-          <stop offset="1" stopColor="#4f46e5" />
-        </linearGradient>
-      </defs>
-      <rect width="32" height="32" rx="9" fill={`url(#${id})`} />
-      <rect x="8" y="9" width="16" height="3.2" rx="1.6" fill="#fff" />
-      <rect x="8" y="14.4" width="11" height="3.2" rx="1.6" fill="#fff" opacity=".8" />
-      <rect x="8" y="19.8" width="13.5" height="3.2" rx="1.6" fill="#fff" opacity=".6" />
-    </svg>
+    <img
+      src={resolvedTheme === 'dark' ? '/favicon-dark.svg' : '/favicon.svg'}
+      width={32}
+      height={32}
+      className={cn('shrink-0', className)}
+      alt=""
+      aria-hidden="true"
+    />
   )
 }
 

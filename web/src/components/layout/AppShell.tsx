@@ -81,7 +81,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     <LayoutGroup id={onNavigate ? 'sheet-nav' : 'side-nav'}>
       <div className="flex h-full flex-col gap-6 overflow-y-auto p-4">
         <Link to="/" onClick={onNavigate} className="flex items-center gap-3 px-2 pt-1">
-          <Logo className="size-9 drop-shadow-[0_4px_12px_oklch(0.56_0.21_285/0.35)]" />
+          <Logo className="size-9" />
           <span>
             <span className="block font-semibold tracking-tight">MindDock</span>
             <span className="block text-xs text-muted-foreground">随身 · 安全 · 有序</span>

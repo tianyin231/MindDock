@@ -1,17 +1,20 @@
 <div align="center">
 
-<img src="web/public/favicon.svg" width="72" alt="MindDock" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="web/public/favicon-dark.svg" />
+  <img src="web/public/favicon.svg" width="72" alt="MindDock" />
+</picture>
 
 # MindDock
 
 **随身、安全、分门别类的第二大脑**
 
-在 QQ 里像给自己发消息一样，把想法、链接、图片、文件和密码丢给它。<br />
-AI 自动整理归类、到点提醒，原件存进夸克网盘，密钥加密保存，网页面板上看得见每一条的去处。
+把想法、链接、图片和文件发给 QQ 机器人，随手收下，自动归位。<br />
+MindDock 帮你整理、提醒和归档；密码等敏感内容单独加密，在网页面板里随时查找。
 
 [![CI](https://github.com/tianyin231/MindDock/actions/workflows/ci.yml/badge.svg)](https://github.com/tianyin231/MindDock/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/tianyin231/MindDock?color=6d5bf6)](https://github.com/tianyin231/MindDock/releases)
-[![License: MIT](https://img.shields.io/badge/license-MIT-4f46e5)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/tianyin231/MindDock?color=555c66)](https://github.com/tianyin231/MindDock/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-555c66)](LICENSE)
 [![Docker image](https://img.shields.io/badge/ghcr.io-minddock-2496ed?logo=docker&logoColor=white)](https://github.com/tianyin231/MindDock/pkgs/container/minddock)
 
 [功能](#功能) · [截图](#截图) · [部署](#部署) · [使用](#使用) · [备份与迁移](#备份与迁移) · [安全设计](#安全设计) · [本地开发](#本地开发) · [更新日志](CHANGELOG.md)
@@ -32,7 +35,7 @@ AI 自动整理归类、到点提醒，原件存进夸克网盘，密钥加密�
 - **密钥库**：`#key` 开头或被自动识别为密码、令牌的消息，在落盘前加密，不交给 AI；只有输入二级密码后才在浏览器里解开，服务器上只有密文。
 - **原件归档到夸克网盘**：经内置 OpenList 上传并核对大小，图片生成缩略图，本地只暂存 7 天，之后按需从夸克取回；Cookie 失效立即告警。
 - **收件台**：所有内容按时间排成一条时间线，每张卡片记着"收到 → AI 识别 → 归入分区"的轨迹；点开看摘要和附件，拖到分区栏就能改归类，也可以直接在网页里投递。
-- **网页面板**：分区总览、全文搜索、详情抽屉、深色模式、手机布局；登录要密码加新设备验证码。
+- **网页面板**：分区总览、全文搜索、详情抽屉、手机布局；浅色 / 深色主题与配套图标，支持手动选择或跟随系统；登录要密码加新设备验证码。
 - **省心运维**：一条命令部署（自动装 Docker），每天加密备份到本地和夸克，一条命令迁移到新服务器。
 
 ## 截图
@@ -44,7 +47,7 @@ AI 自动整理归类、到点提醒，原件存进夸克网盘，密钥加密�
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/stream-dark.webp" />
-  <img src="docs/images/stream-light.webp" alt="收件台：识别中的卡片边缘有光流动" />
+  <img src="docs/images/stream-light.webp" alt="收件台：按时间查看消息、归类轨迹和分区" />
 </picture>
 
 <p align="center">
