@@ -1,5 +1,8 @@
 from conftest import setup_account
+from nacl.public import PrivateKey
+from test_vault import fake_wrap
 
+from minddock import vault
 from minddock.ingest import Incoming, ingest
 
 
@@ -76,3 +79,41 @@ def test_reminder_actions_from_panel(client, app):
     assert client.post(url, json={"action": "done"}).status_code == 422
 
     assert client.post("/api/qq/test").json()["ok"] is False  # 未配置机器人
+
+
+def test_timeline_merges_partitions_and_secrets_with_paging(client, app):
+    setup_account(client, app)
+    db = app.state.db
+    vault.setup(db, bytes(PrivateKey.generate().public_key), fake_wrap(), fake_wrap())
+    # 同一秒内写入多条，验证按 id 排序后翻页不漏不重
+    ids = [add(app, f"第 {n} 条", f"t{n}").item_id for n in range(5)]
+    client.post(f"/api/items/{ids[0]}/move", json={"partition": "note"})
+    secret = vault.store_text(db, vault.public_key(db), "路由器", "abc")
+
+    first = client.get("/api/timeline", params={"limit": 4}).json()
+    assert len(first["entries"]) == 4 and first["next"]
+    second = client.get("/api/timeline", params={"limit": 4, "before": first["next"]}).json()
+    assert second["next"] is None
+    entries = first["entries"] + second["entries"]
+    seen = [e["item"]["id"] if e["kind"] == "item" else e["secret"]["id"] for e in entries]
+    assert sorted(seen) == sorted([*ids, secret["id"]])
+    assert all("sealed" not in e["secret"] for e in entries if e["kind"] == "secret")
+    assert {e["item"]["partition"] for e in entries if e["kind"] == "item"} == {"inbox", "note"}
+
+
+def test_add_text_from_panel_goes_through_pipeline(client, app):
+    setup_account(client, app)
+    created = client.post("/api/items", json={"text": "  读完《原则》第三章  "}).json()
+    assert created["kind"] == "item"
+    assert created["item"]["source"] == "panel" and created["item"]["partition"] == "inbox"
+    assert created["item"]["text"] == "读完《原则》第三章"
+    assert client.post("/api/items", json={"text": "   "}).status_code == 422
+
+    # 密钥：库未启用时不保存；启用后加密入库，不产生普通条目
+    assert client.post("/api/items", json={"text": "#key 路由器\nabc123"}).status_code == 409
+    vault.setup(app.state.db, bytes(PrivateKey.generate().public_key), fake_wrap(), fake_wrap())
+    stored = client.post("/api/items", json={"text": "#key 路由器\nabc123"}).json()
+    assert stored["kind"] == "secret" and stored["secret"]["label"] == "路由器"
+    assert stored["secret"]["source"] == "panel"
+    assert client.post("/api/items", json={"text": "#key"}).status_code == 422
+    assert client.get("/api/counts").json()["inbox"] == 1

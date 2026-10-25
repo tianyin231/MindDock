@@ -1,19 +1,21 @@
-"""条目接口：分区列表、计数、搜索、移动、待办勾选、提醒操作、重试、附件下载。"""
+"""条目接口：分区列表、收件台、面板投递、计数、搜索、移动、待办勾选、提醒操作、重试、附件下载。"""
 
 from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
 from minddock import items as repo
-from minddock import reminders
+from minddock import reminders, vault
 from minddock.api.deps import get_db, require_user
+from minddock.ingest import Incoming, ingest
 from minddock.integrations.openlist import OpenListClient, OpenListError
 from minddock.jobs import retry_now
+from minddock.secret_rules import EXPLICIT_REASON, detect_secret
 from minddock.timeutil import to_utc_iso
 
 router = APIRouter(prefix="/api", tags=["items"], dependencies=[Depends(require_user)])
@@ -35,6 +37,47 @@ async def counts(request: Request) -> dict:
 @router.get("/items")
 async def list_items(partition: Partition, request: Request) -> list[dict]:
     return repo.list_items(get_db(request), partition)
+
+
+@router.get("/timeline")
+async def timeline(
+    request: Request, before: str | None = None, limit: int = Query(40, ge=1, le=100)
+) -> dict:
+    return repo.timeline(get_db(request), before, limit)
+
+
+class NewText(BaseModel):
+    text: str = Field(min_length=1, max_length=10000)
+
+
+@router.post("/items")
+async def add_text(body: NewText, request: Request) -> dict:
+    """在面板里直接投递一段文字，和发给 QQ 机器人走同一条流程（含密钥识别）。"""
+    db = get_db(request)
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="内容不能为空")
+    reason = detect_secret(text)
+    if reason:
+        pk = vault.public_key(db)
+        if pk is None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"这条内容{reason}，按密钥处理，但密钥库还没启用，没有保存",
+            )
+        detected = None if reason == EXPLICIT_REASON else reason
+        label, content = vault.split_message(text, False, detected)
+        if not content:
+            raise HTTPException(
+                status_code=422, detail="没有找到要保存的内容。写法：#key 名称，换行后写内容"
+            )
+        try:
+            secret = vault.store_text(db, pk, label, content, source="panel", detected=detected)
+        except vault.VaultError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        return {"kind": "secret", "secret": secret}
+    result = ingest(db, Incoming(msg_id=None, openid="", content=text), source="panel")
+    return {"kind": "item", "item": repo.item_to_api(db, result.item_id)}
 
 
 @router.get("/items/{item_id}")

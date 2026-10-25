@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 from minddock.db import now_iso
 from minddock.util import emit, new_code, new_id
+from minddock.vault import secret_to_api
 
 PARTITIONS = ("inbox", "note", "bookmark", "todo", "reminder", "file")
 MOVABLE = ("note", "bookmark", "todo", "reminder", "file")
@@ -175,6 +176,42 @@ def list_items(conn: sqlite3.Connection, partition: str, limit: int = 300) -> li
     elif partition == "reminder":
         items.sort(key=lambda i: (i["reminder"] or {}).get("remindAt") or "9999")
     return items
+
+
+def timeline(
+    conn: sqlite3.Connection, before: str | None = None, limit: int = 40
+) -> dict[str, Any]:
+    """收件台：所有分区的条目和密钥，按收到时间倒序分页。
+
+    游标是上一页最后一条的 "created_at|id"；时间只精确到秒，同一秒的按 id 排序，翻页不漏不重。
+    """
+    cond, args = "", ()
+    if before:
+        at, _, last_id = before.partition("|")
+        cond = " AND (created_at < ? OR (created_at = ? AND id < ?))"
+        args = (at, at, last_id)
+    order = f"{cond} ORDER BY created_at DESC, id DESC LIMIT ?"
+    rows = [
+        ("item", r["id"], r["created_at"], None)
+        for r in conn.execute(
+            f"SELECT id, created_at FROM items WHERE status = 'active'{order}", (*args, limit + 1)
+        )
+    ] + [
+        ("secret", r["id"], r["created_at"], r)
+        for r in conn.execute(
+            f"SELECT * FROM secrets WHERE trashed_at IS NULL{order}", (*args, limit + 1)
+        )
+    ]
+    rows.sort(key=lambda r: (r[2], r[1]), reverse=True)
+    page, more = rows[:limit], len(rows) > limit
+    entries = []
+    for kind, row_id, _, secret in page:
+        if kind == "secret":
+            entries.append({"kind": "secret", "secret": secret_to_api(secret)})
+        elif item := item_to_api(conn, row_id):
+            entries.append({"kind": "item", "item": item})
+    last = page[-1] if page else None
+    return {"entries": entries, "next": f"{last[2]}|{last[1]}" if more and last else None}
 
 
 def counts(conn: sqlite3.Connection) -> dict[str, int]:
