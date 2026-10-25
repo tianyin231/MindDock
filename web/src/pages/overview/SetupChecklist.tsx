@@ -20,8 +20,8 @@ export function SetupChecklist() {
   if (steps.every((s) => s.done)) return null
 
   return (
-    <section className="rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-transparent p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <section className="surface relative overflow-hidden rounded-2xl p-4 before:pointer-events-none before:absolute before:inset-0 before:bg-[radial-gradient(60%_120%_at_0%_0%,color-mix(in_oklch,var(--brand)_12%,transparent),transparent)]">
+      <div className="relative flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold">还差几步就能开始使用</h2>
           <p className="text-xs text-muted-foreground">都在设置页完成，每项都可以一键测试</p>
@@ -34,9 +34,9 @@ export function SetupChecklist() {
           <ArrowRightIcon className="size-3.5" />
         </Link>
       </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="relative mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {steps.map((s) => (
-          <div key={s.label} className="flex items-center gap-2 rounded-lg bg-background/70 px-3 py-2 text-sm">
+          <div key={s.label} className="flex items-center gap-2 rounded-xl border bg-background/60 px-3 py-2 text-sm">
             {s.done ? (
               <CircleCheckIcon className="size-4 shrink-0 text-emerald-500" />
             ) : (

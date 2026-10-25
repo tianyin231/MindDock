@@ -7,6 +7,8 @@ import type {
   LiveEvent,
   ReminderAction,
   Secret,
+  TimelineEntry,
+  TimelinePage,
   VaultKeysData,
   VaultRewrapBody,
   VaultSetupBody,
@@ -17,6 +19,10 @@ import type {
 export interface Api {
   counts(): Promise<Counts>
   listItems(partition: ItemPartition): Promise<Item[]>
+  /** 收件台：所有分区按收到时间倒序，before 为上一页给出的游标 */
+  timeline(before?: string): Promise<TimelinePage>
+  /** 在面板里投递一段文字，和发给 QQ 机器人走同一流程 */
+  addText(text: string): Promise<TimelineEntry>
   getItem(id: string): Promise<Item | null>
   search(q: string): Promise<Item[]>
   setTodoDone(id: string, done: boolean): Promise<Item>

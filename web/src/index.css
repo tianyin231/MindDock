@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -9,7 +10,8 @@
     --font-heading: var(--font-sans);
     /* Geist 不含中文字形，中文回退到系统字体 */
     --font-sans: 'Geist Variable', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
-    --animate-scan: scan 1.4s ease-in-out infinite;
+    --font-mono: 'Geist Mono Variable', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+    --color-brand: var(--brand);
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -50,79 +52,169 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* 收件卡片底部的"识别中"扫描线 */
-@keyframes scan {
-    from { transform: translateX(-100%); }
-    to { transform: translateX(300%); }
-}
-
+/*
+ * 设计基调：暖白纸面 + 墨色文字（浅色）、深蓝黑（深色）；颜色只做点缀，
+ * 层次靠细边框、顶部高光和柔和投影，背景叠一层极淡的光晕与颗粒质感。
+ */
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
+    --background: oklch(0.984 0.003 85);
+    --foreground: oklch(0.2 0.012 275);
     --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
+    --card-foreground: oklch(0.2 0.012 275);
     --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.2 0.012 275);
+    --primary: oklch(0.23 0.014 275);
+    --primary-foreground: oklch(0.985 0.003 85);
+    --secondary: oklch(0.963 0.004 85);
+    --secondary-foreground: oklch(0.23 0.014 275);
+    --muted: oklch(0.963 0.004 85);
+    --muted-foreground: oklch(0.52 0.012 275);
+    --accent: oklch(0.955 0.005 85);
+    --accent-foreground: oklch(0.23 0.014 275);
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
+    --border: oklch(0.91 0.006 85);
+    --input: oklch(0.9 0.006 85);
+    --ring: oklch(0.6 0.17 285);
+    --brand: oklch(0.56 0.21 285);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
     --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
+    --sidebar: oklch(0.975 0.004 85 / 0.8);
+    --sidebar-foreground: oklch(0.2 0.012 275);
+    --sidebar-primary: oklch(0.23 0.014 275);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+    --sidebar-accent: oklch(1 0 0);
+    --sidebar-accent-foreground: oklch(0.2 0.012 275);
+    --sidebar-border: oklch(0.91 0.006 85);
+    --sidebar-ring: oklch(0.6 0.17 285);
+
+    /* 表面：顶部 1px 高光 + 两层投影 */
+    --surface-highlight: inset 0 1px 0 oklch(1 0 0 / 0.9);
+    --surface-shadow: 0 1px 2px oklch(0.25 0.02 275 / 0.05), 0 8px 24px -12px oklch(0.25 0.02 275 / 0.14);
+    --surface-shadow-lift: 0 2px 4px oklch(0.25 0.02 275 / 0.06), 0 18px 40px -16px oklch(0.25 0.02 275 / 0.22);
+    --ambient-a: oklch(0.75 0.12 285 / 0.16);
+    --ambient-b: oklch(0.85 0.09 70 / 0.14);
+    --grain-opacity: 0.035;
+
+    /* 分区主色（与 Tailwind 500 色一致），用于需要动态取色的光晕和轨迹 */
+    --p-inbox: oklch(0.554 0.046 257.417);
+    --p-note: oklch(0.769 0.188 70.08);
+    --p-bookmark: oklch(0.606 0.25 292.717);
+    --p-todo: oklch(0.696 0.17 162.48);
+    --p-reminder: oklch(0.645 0.246 16.439);
+    --p-secret: oklch(0.585 0.233 277.117);
+    --p-file: oklch(0.685 0.169 237.323);
 }
 
 .dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
+    --background: oklch(0.155 0.008 275);
+    --foreground: oklch(0.955 0.004 85);
+    --card: oklch(0.195 0.009 275);
+    --card-foreground: oklch(0.955 0.004 85);
+    --popover: oklch(0.215 0.01 275);
+    --popover-foreground: oklch(0.955 0.004 85);
+    --primary: oklch(0.95 0.004 85);
+    --primary-foreground: oklch(0.2 0.012 275);
+    --secondary: oklch(0.245 0.01 275);
+    --secondary-foreground: oklch(0.955 0.004 85);
+    --muted: oklch(0.24 0.01 275);
+    --muted-foreground: oklch(0.69 0.012 275);
+    --accent: oklch(0.26 0.012 275);
+    --accent-foreground: oklch(0.955 0.004 85);
     --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
+    --border: oklch(1 0 0 / 8%);
+    --input: oklch(1 0 0 / 12%);
+    --ring: oklch(0.65 0.17 285);
+    --brand: oklch(0.68 0.18 285);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar: oklch(0.17 0.009 275 / 0.8);
+    --sidebar-foreground: oklch(0.955 0.004 85);
+    --sidebar-primary: oklch(0.68 0.18 285);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+    --sidebar-accent: oklch(1 0 0 / 6%);
+    --sidebar-accent-foreground: oklch(0.955 0.004 85);
+    --sidebar-border: oklch(1 0 0 / 7%);
+    --sidebar-ring: oklch(0.65 0.17 285);
+
+    --surface-highlight: inset 0 1px 0 oklch(1 0 0 / 0.05);
+    --surface-shadow: 0 1px 2px oklch(0 0 0 / 0.3), 0 12px 32px -16px oklch(0 0 0 / 0.6);
+    --surface-shadow-lift: 0 2px 4px oklch(0 0 0 / 0.35), 0 24px 48px -16px oklch(0 0 0 / 0.7);
+    --ambient-a: oklch(0.55 0.2 285 / 0.18);
+    --ambient-b: oklch(0.6 0.12 230 / 0.1);
+    --grain-opacity: 0.05;
+}
+
+/* 卡片表面 */
+@utility surface {
+    background-color: var(--card);
+    border-width: 1px;
+    border-color: var(--border);
+    box-shadow: var(--surface-highlight), var(--surface-shadow);
+}
+
+@utility surface-lift {
+    box-shadow: var(--surface-highlight), var(--surface-shadow-lift);
+}
+
+/* 小号说明标签 */
+@utility eyebrow {
+    font-size: 11px;
+    line-height: 16px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    color: var(--muted-foreground);
+}
+
+/* AI 识别中：沿卡片边缘旋转的一道光 */
+@property --beam-angle {
+    syntax: '<angle>';
+    inherits: false;
+    initial-value: 0deg;
+}
+
+@keyframes beam-spin {
+    to { --beam-angle: 360deg; }
+}
+
+@utility beam {
+    position: relative;
+    &::before {
+        content: '';
+        position: absolute;
+        inset: -1px;
+        border-radius: inherit;
+        padding: 1.5px;
+        background: conic-gradient(from var(--beam-angle), transparent 0 62%, var(--beam-color, var(--brand)) 80%, oklch(1 0 0 / 0.9) 86%, transparent 92%);
+        mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+        animation: beam-spin 2.2s linear infinite;
+        pointer-events: none;
+    }
+}
+
+/* 文字上流过的一道高光，用于"正在识别" */
+@keyframes shimmer {
+    from { background-position: 150% 0; }
+    to { background-position: -50% 0; }
+}
+
+@utility shimmer-text {
+    background: linear-gradient(90deg, var(--muted-foreground) 0%, var(--muted-foreground) 40%, var(--foreground) 50%, var(--muted-foreground) 60%, var(--muted-foreground) 100%);
+    background-size: 200% 100%;
+    background-clip: text;
+    color: transparent;
+    animation: shimmer 1.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .beam::before { animation: none; }
+    .shimmer-text { animation: none; color: var(--muted-foreground); }
 }
 
 @layer base {
@@ -130,7 +222,27 @@
     @apply border-border outline-ring/50;
     }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    }
+  /* 背景光晕与颗粒：固定在视口，内容在其上方滚动 */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(60rem 32rem at 85% -10%, var(--ambient-a), transparent 70%),
+      radial-gradient(48rem 28rem at -5% 0%, var(--ambient-b), transparent 70%);
+    }
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: var(--grain-opacity);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
     }
   button:not(:disabled), [role="button"]:not(:disabled) {
     cursor: pointer;

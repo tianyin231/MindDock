@@ -7,6 +7,8 @@ import type {
   LiveEvent,
   ReminderAction,
   Secret,
+  TimelineEntry,
+  TimelinePage,
   VaultKeysData,
   VaultRewrapBody,
   VaultSetupBody,
@@ -17,6 +19,9 @@ import type {
 export const httpBackend: Api = {
   counts: () => http.get<Counts>('/api/counts'),
   listItems: (partition: ItemPartition) => http.get<Item[]>(`/api/items?partition=${partition}`),
+  timeline: (before?: string) =>
+    http.get<TimelinePage>(before ? `/api/timeline?before=${encodeURIComponent(before)}` : '/api/timeline'),
+  addText: (text: string) => http.post<TimelineEntry>('/api/items', { text }),
   getItem: (id: string) =>
     http.get<Item>(`/api/items/${encodeURIComponent(id)}`).catch((err) => {
       if (err instanceof ApiError && err.status === 404) return null

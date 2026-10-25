@@ -120,3 +120,6 @@ export const PARTITION = Object.fromEntries(PARTITIONS.map((p) => [p.key, p])) a
 export const MOVABLE_PARTITIONS = PARTITIONS.filter(
   (p): p is PartitionMeta & { key: ItemPartition } => p.key !== 'inbox' && p.key !== 'secret',
 )
+
+/** 分区主色的 CSS 变量，用于光晕、轨迹等需要动态取色的地方 */
+export const partitionTone = (key: PartitionKey) => `var(--p-${key})`

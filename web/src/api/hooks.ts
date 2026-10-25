@@ -1,9 +1,11 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
+import { mapTimelineItem, patchTimelineItem, prependEntry, timelineKey } from './timeline-cache'
 import type { Counts, Item, ItemPartition, ReminderAction } from './types'
 
 export const qk = {
   counts: ['counts'] as const,
+  timeline: timelineKey,
   items: (partition: ItemPartition) => ['items', partition] as const,
   item: (id: string) => ['item', id] as const,
   search: (q: string) => ['search', q] as const,
@@ -17,6 +19,24 @@ export function useCounts() {
 
 export function useItems(partition: ItemPartition) {
   return useQuery({ queryKey: qk.items(partition), queryFn: () => api.listItems(partition) })
+}
+
+export function useTimeline() {
+  return useInfiniteQuery({
+    queryKey: qk.timeline,
+    queryFn: ({ pageParam }) => api.timeline(pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.next ?? undefined,
+  })
+}
+
+export function useAddText() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (text: string) => api.addText(text),
+    // 实时事件通常先到；这里再放一次，断线时也能立刻看到
+    onSuccess: (entry) => prependEntry(qc, entry),
+  })
 }
 
 export function useItem(id: string | null) {
@@ -52,14 +72,13 @@ export function useToggleTodo() {
     onMutate: async ({ id, done }) => {
       await qc.cancelQueries({ queryKey: qk.items('todo') })
       const previous = qc.getQueryData<Item[]>(qk.items('todo'))
-      qc.setQueryData<Item[]>(qk.items('todo'), (list) =>
-        list?.map((i) =>
-          i.id === id ? { ...i, todo: { ...i.todo, doneAt: done ? new Date().toISOString() : undefined } } : i,
-        ),
-      )
+      const mark = (i: Item): Item => ({ ...i, todo: { ...i.todo, doneAt: done ? new Date().toISOString() : undefined } })
+      qc.setQueryData<Item[]>(qk.items('todo'), (list) => list?.map((i) => (i.id === id ? mark(i) : i)))
+      mapTimelineItem(qc, id, mark)
       return { previous }
     },
     onError: (_err, _vars, ctx) => qc.setQueryData(qk.items('todo'), ctx?.previous),
+    onSuccess: (item) => patchTimelineItem(qc, item),
     onSettled: (_data, _err, { id }) => {
       qc.invalidateQueries({ queryKey: qk.items('todo') })
       qc.invalidateQueries({ queryKey: qk.item(id) })
@@ -86,6 +105,7 @@ export function useMoveItem() {
       qc.invalidateQueries({ queryKey: ['items'] })
       qc.invalidateQueries({ queryKey: qk.counts })
       qc.setQueryData(qk.item(item.id), item)
+      patchTimelineItem(qc, item)
     },
   })
 }
@@ -97,6 +117,7 @@ export function useReminderAction() {
     onSuccess: (item) => {
       qc.setQueryData(qk.item(item.id), item)
       qc.invalidateQueries({ queryKey: qk.items('reminder') })
+      patchTimelineItem(qc, item)
     },
   })
 }
@@ -105,6 +126,9 @@ export function useRetryItem() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => api.retryItem(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.items('inbox') }),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: qk.items('inbox') })
+      mapTimelineItem(qc, id, (i) => ({ ...i, processing: { stage: 'organizing' } }))
+    },
   })
 }

@@ -119,6 +119,7 @@ export function SecretsPage() {
   const refresh = () => {
     qc.invalidateQueries({ queryKey: qk.secrets })
     qc.invalidateQueries({ queryKey: qk.counts })
+    qc.invalidateQueries({ queryKey: qk.timeline })
   }
 
   const openFile = async (secret: Secret) => {
@@ -247,7 +248,7 @@ export function SecretsPage() {
       ) : secrets.length === 0 ? (
         <EmptyState icon={KeyRoundIcon} title="密钥库是空的" hint="在 QQ 里发送「#key 名称」，换行后写内容，会加密存到这里" />
       ) : (
-        <div className="divide-y rounded-2xl border bg-card shadow-xs">
+        <div className="surface divide-y rounded-2xl">
           {secrets.map((s) => (
             <SecretRow
               key={s.id}

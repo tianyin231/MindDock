@@ -16,7 +16,7 @@ export function AuthLayout({ title, subtitle, children }: { title: string; subti
             <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
           </div>
         </div>
-        <div className="rounded-2xl border bg-card p-6 shadow-sm">{children}</div>
+        <div className="surface rounded-2xl p-6">{children}</div>
         <p className="mt-6 text-center text-xs text-muted-foreground">MindDock · 随身 · 安全 · 有序</p>
       </div>
     </div>

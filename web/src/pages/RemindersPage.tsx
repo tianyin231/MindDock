@@ -37,7 +37,7 @@ export function RemindersPage() {
     <div className="mx-auto max-w-3xl space-y-6">
       <PageHeader partition="reminder" count={scheduled} />
 
-      <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-xl border bg-card px-4 py-3 text-xs text-muted-foreground">
+      <div className="flex flex-wrap gap-x-6 gap-y-2 surface rounded-2xl px-4 py-3 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5">
           <MessageCircleIcon className="size-3.5 text-rose-500" />
           到点由 QQ 机器人提醒你
@@ -65,7 +65,7 @@ export function RemindersPage() {
           const items = all.filter((i) => groupOf(i) === g.key)
           if (items.length === 0) return null
           return (
-            <section key={g.key} className="rounded-2xl border bg-card p-3 shadow-xs">
+            <section key={g.key} className="surface rounded-2xl p-3">
               <h2 className="px-2 pb-1 text-xs font-semibold text-muted-foreground">
                 {g.label} <span className="font-normal">{items.length}</span>
               </h2>

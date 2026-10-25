@@ -9,6 +9,8 @@ import type {
   LiveEvent,
   ReminderAction,
   Secret,
+  TimelineEntry,
+  TimelinePage,
   VaultKeysData,
   VaultRewrapBody,
   VaultSetupBody,
@@ -76,23 +78,56 @@ function simulateIncoming(): void {
     return
   }
 
-  const result = tpl.result!
+  receive(tpl.preview, tpl.result!, 'qq')
+}
+
+function scheduleAuto(delay = 6500 + Math.random() * 4000): void {
+  clearTimeout(autoTimer)
+  autoTimer = undefined
+  if (!auto || listeners.size === 0) return
+  autoTimer = setTimeout(() => {
+    simulateIncoming()
+    scheduleAuto()
+  }, delay)
+}
+
+// ---- 面板投递：用几条简单规则代替 AI，好让演示走完整个流程 ----
+
+function guessResult(text: string): Partial<Item> {
+  const url = text.match(/https?:\/\/[^\s]+/)?.[0]
+  const rest = text.replace(url ?? '', '').trim()
+  const title = (rest || text).split('\n')[0].slice(0, 24)
+  if (url) {
+    const site = new URL(url).hostname.replace(/^www\./, '')
+    return { partition: 'bookmark', title: rest ? title : site, link: { url, site, title: title || site }, tags: ['链接'] }
+  }
+  if (/提醒|闹钟|叫我/.test(text)) {
+    const at = new Date(Date.now() + 3 * HOUR_MS)
+    at.setMinutes(0, 0, 0)
+    return { partition: 'reminder', title, reminder: { remindAt: at.toISOString(), repeat: 'none', status: 'scheduled' } }
+  }
+  if (/记得|要|得|买|交|之前|完成/.test(text)) return { partition: 'todo', title, todo: {} }
+  return { partition: 'note', title, summary: text.length > 24 ? text.slice(0, 60) : undefined }
+}
+
+const HOUR_MS = 3_600_000
+
+function receive(text: string, result: Partial<Item>, source: Item['source']): Item {
   const fresh: Item = {
     id: makeId(),
     code: makeCode(),
-    source: 'qq',
+    source,
     partition: 'inbox',
     partitionSource: 'auto',
-    text: tpl.preview,
-    title: tpl.preview,
+    text,
+    title: text,
     tags: [],
-    createdAt: now,
+    createdAt: new Date().toISOString(),
     attachments: (result.attachments ?? []).map((a) => ({ ...a, id: makeId() })),
     processing: { stage: 'organizing' },
   }
   items.set(fresh.id, fresh)
   emit({ type: 'item.received', item: fresh })
-
   setTimeout(
     () => {
       const current = items.get(fresh.id)
@@ -108,19 +143,13 @@ function simulateIncoming(): void {
       items.set(classified.id, classified)
       emit({ type: 'item.classified', item: classified })
     },
-    1600 + Math.random() * 900,
+    1800 + Math.random() * 900,
   )
+  return fresh
 }
 
-function scheduleAuto(delay = 6500 + Math.random() * 4000): void {
-  clearTimeout(autoTimer)
-  autoTimer = undefined
-  if (!auto || listeners.size === 0) return
-  autoTimer = setTimeout(() => {
-    simulateIncoming()
-    scheduleAuto()
-  }, delay)
-}
+const entryKey = (e: TimelineEntry) =>
+  e.kind === 'item' ? `${e.item.createdAt}|${e.item.id}` : `${e.secret.createdAt}|${e.secret.id}`
 
 // ---- 对外接口 ----
 
@@ -135,6 +164,40 @@ export const mockBackend = {
   async listItems(partition: ItemPartition): Promise<Item[]> {
     await latency()
     return clone(sortForPartition([...items.values()].filter((i) => i.partition === partition), partition))
+  },
+
+  async timeline(before?: string): Promise<TimelinePage> {
+    await latency()
+    const all: TimelineEntry[] = [
+      ...[...items.values()].map((item) => ({ kind: 'item' as const, item })),
+      ...secrets.map((secret) => ({ kind: 'secret' as const, secret })),
+    ].sort((a, b) => (entryKey(a) < entryKey(b) ? 1 : -1))
+    const rest = before ? all.filter((e) => entryKey(e) < before) : all
+    const page = rest.slice(0, 20)
+    return clone({ entries: page, next: rest.length > page.length ? entryKey(page[page.length - 1]) : null })
+  },
+
+  async addText(text: string): Promise<TimelineEntry> {
+    await latency(80)
+    const body = text.trim()
+    const explicit = body.match(/^#key\s*(.*)$/is)
+    if (explicit) {
+      if (!vault) throw new Error('这条内容带有 #key 标记，按密钥处理，但密钥库还没启用，没有保存')
+      const [label, ...value] = explicit[1].split('\n')
+      const secret: Secret = {
+        id: makeId(),
+        code: makeCode(),
+        label: label.trim() || '未命名密钥',
+        kind: 'text',
+        createdAt: new Date().toISOString(),
+        source: 'panel',
+        sealed: await sealForVault(value.join('\n') || label),
+      }
+      secrets.unshift(secret)
+      emit({ type: 'secret.stored', secret })
+      return clone({ kind: 'secret', secret })
+    }
+    return clone({ kind: 'item', item: receive(body, guessResult(body), 'panel') })
   },
 
   async getItem(id: string): Promise<Item | null> {

@@ -57,7 +57,7 @@ export function TodosPage() {
             const items = open.filter((i) => groupOf(i) === g.key)
             if (items.length === 0) return null
             return (
-              <motion.section layout key={g.key} className="rounded-2xl border bg-card p-3 shadow-xs">
+              <motion.section layout key={g.key} className="surface rounded-2xl p-3">
                 <h2 className={cn('px-2 pb-1 text-xs font-semibold', g.tone)}>
                   {g.label} <span className="font-normal text-muted-foreground">{items.length}</span>
                 </h2>

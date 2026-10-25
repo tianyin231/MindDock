@@ -142,7 +142,7 @@ function SectionCard({ section, extra }: { section: SettingSection; extra?: Reac
   }
 
   return (
-    <form onSubmit={onSave} className="rounded-2xl border bg-card shadow-xs" autoComplete="off">
+    <form onSubmit={onSave} className="surface rounded-2xl" autoComplete="off">
       <div className="flex items-start gap-3 border-b px-5 py-4">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
           <Icon className="size-4" />
@@ -336,7 +336,7 @@ function AccountCard() {
   const { data } = useAuthState()
   const logout = useLogout()
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-2xl border bg-card px-5 py-4 shadow-xs">
+    <div className="flex flex-wrap items-center gap-3 surface rounded-2xl px-5 py-4">
       <span className="flex size-9 items-center justify-center rounded-lg bg-muted">
         <UserIcon className="size-4" />
       </span>
@@ -357,7 +357,7 @@ function AccountCard() {
 function AboutCard() {
   const { data } = useHealth()
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-2xl border bg-card px-5 py-4 text-sm shadow-xs">
+    <div className="flex flex-wrap items-center gap-3 surface rounded-2xl px-5 py-4 text-sm">
       <span className="flex size-9 items-center justify-center rounded-lg bg-muted">
         <InfoIcon className="size-4" />
       </span>

@@ -128,3 +128,12 @@ export type LiveEvent =
   | { type: 'item.updated'; item: Item }
   | { type: 'secret.stored'; secret: Secret }
   | { type: 'qq.bound' }
+
+/** 收件台的一条：普通条目或密钥（密钥只有名称等明文信息） */
+export type TimelineEntry = { kind: 'item'; item: Item } | { kind: 'secret'; secret: Secret }
+
+export interface TimelinePage {
+  entries: TimelineEntry[]
+  /** 下一页游标，没有更多时为 null */
+  next: string | null
+}

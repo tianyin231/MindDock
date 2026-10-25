@@ -263,20 +263,25 @@ export function BookmarkCard({ item }: { item: Item }) {
       type="button"
       onClick={() => openItem(item.id)}
       whileHover={{ y: -2 }}
-      className="group flex flex-col overflow-hidden rounded-xl border bg-card text-left shadow-xs transition-shadow hover:shadow-md"
+      className="surface group relative flex flex-col overflow-hidden rounded-2xl text-left transition-shadow hover:surface-lift"
     >
-      <div
-        className="relative flex h-20 items-end p-3"
-        style={{ background: `linear-gradient(135deg, oklch(0.9 0.05 ${hue}), oklch(0.75 0.11 ${hue + 40}))` }}
-      >
-        <span aria-hidden="true" className="absolute inset-0 hidden bg-black/45 dark:block" />
-        <span className="relative flex size-8 items-center justify-center rounded-lg bg-white/85 text-sm font-bold text-zinc-800 shadow-sm">
-          {site.charAt(0).toUpperCase()}
+      {/* 站点色只留一道细光，不再整块渐变 */}
+      <span
+        aria-hidden="true"
+        className="absolute inset-x-0 top-0 h-16 opacity-60 transition-opacity group-hover:opacity-100"
+        style={{ background: `radial-gradient(80% 100% at 0% 0%, oklch(0.8 0.1 ${hue} / 0.22), transparent)` }}
+      />
+      <div className="relative flex flex-1 flex-col gap-1.5 p-4">
+        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span
+            className="flex size-6 items-center justify-center rounded-md text-[11px] font-semibold text-white shadow-xs"
+            style={{ background: `linear-gradient(135deg, oklch(0.7 0.12 ${hue}), oklch(0.55 0.14 ${hue + 40}))` }}
+          >
+            {site.charAt(0).toUpperCase()}
+          </span>
+          <span className="truncate">{site}</span>
         </span>
-      </div>
-      <div className="flex flex-1 flex-col gap-1.5 p-3">
-        <span className="text-xs text-muted-foreground">{site}</span>
-        <span className="line-clamp-2 text-sm leading-snug font-medium">{item.title}</span>
+        <span className="mt-1 line-clamp-2 text-sm leading-snug font-medium">{item.title}</span>
         {item.summary && <span className="line-clamp-2 text-xs text-muted-foreground">{item.summary}</span>}
         <div className="mt-auto flex items-center justify-between gap-2 pt-1">
           <TagList tags={item.tags} />
@@ -297,7 +302,7 @@ export function NoteCard({ item, className }: { item: Item; className?: string }
       type="button"
       onClick={() => openItem(item.id)}
       className={cn(
-        'flex w-full flex-col gap-2 rounded-xl border bg-card p-4 text-left shadow-xs transition-shadow hover:shadow-md',
+        'surface flex w-full flex-col gap-2 rounded-2xl p-4 text-left transition-shadow hover:surface-lift',
         className,
       )}
     >
@@ -326,7 +331,7 @@ export function FileTile({ item }: { item: Item }) {
       type="button"
       onClick={() => openItem(item.id)}
       whileHover={{ scale: 1.02 }}
-      className="group relative aspect-square overflow-hidden rounded-xl border bg-card text-left"
+      className="surface group relative aspect-square overflow-hidden rounded-2xl text-left"
     >
       {visual ? (
         <>

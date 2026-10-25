@@ -77,7 +77,7 @@ function InboxRow({ item }: { item: Item }) {
   const failed = item.processing?.stage === 'failed'
 
   return (
-    <motion.div layout className="rounded-xl border bg-card p-4 shadow-xs">
+    <motion.div layout className="surface rounded-2xl p-4">
       <div className="flex flex-wrap items-start gap-3">
         <span
           className={cn(

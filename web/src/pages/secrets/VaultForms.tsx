@@ -10,7 +10,7 @@ import { SecretInput } from './SecretInput'
 
 function Panel({ icon, title, hint, children }: { icon: ReactNode; title: string; hint: ReactNode; children: ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-2xl border bg-card shadow-xs">
+    <div className="surface overflow-hidden rounded-2xl">
       <div className="flex flex-col items-center gap-3 bg-gradient-to-b from-indigo-500/10 to-transparent px-6 pt-8 pb-6 text-center">
         <span className="flex size-12 items-center justify-center rounded-2xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400">
           {icon}
