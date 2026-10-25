@@ -23,7 +23,7 @@ from minddock.qq.gateway import Gateway
 from minddock.qq.replies import next_reply_seq, record_inbound
 from minddock.secret_rules import EXPLICIT_REASON, detect_secret
 from minddock.settings_store import SettingsStore
-from minddock.util import emit, kv_delete, kv_get, kv_set
+from minddock.util import emit, https_url, kv_delete, kv_get, kv_set, require_https
 
 log = logging.getLogger(__name__)
 
@@ -38,7 +38,8 @@ def parse_c2c(data: dict[str, Any]) -> Incoming:
     author = data.get("author") or {}
     attachments = [
         IncomingAttachment(
-            url=a["url"] if not a["url"].startswith("//") else "https:" + a["url"],
+            # 规范不了的保留原样，下载时会被拒绝并记下原因
+            url=https_url(a["url"]) or a["url"],
             filename=a.get("filename") or "",
             content_type=a.get("content_type") or "",
             size=a.get("size"),
@@ -226,6 +227,7 @@ class Bot:
         """密钥附件只在内存里下载和加密，明文不落盘。"""
         if att.size and att.size > vault.MAX_FILE:
             raise vault.VaultError("超过 20 MB")
+        require_https(att.url)
         chunks, total = [], 0
         async with self.http.stream("GET", att.url, timeout=httpx2.Timeout(30, read=60)) as resp:
             if resp.status_code != 200:

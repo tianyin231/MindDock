@@ -69,5 +69,23 @@ def emit(conn: sqlite3.Connection, event_type: str, payload: dict[str, Any]) -> 
     )
 
 
+def https_url(url: str) -> str | None:
+    """把 QQ 给的附件地址规范成 https；协议相对地址和 http 都改用 https，其他协议返回 None。"""
+    url = url.strip()
+    if url.startswith("//"):
+        return "https:" + url
+    if url[:7].lower() == "http://":
+        return "https://" + url[7:]
+    if url[:8].lower() == "https://":
+        return url
+    return None
+
+
+def require_https(url: str) -> None:
+    """下载附件前的最后一道检查：不是 https 就拒绝，避免内容（包括密钥附件）明文经过公网。"""
+    if not url.lower().startswith("https://"):
+        raise RuntimeError("附件地址不是 HTTPS，为避免明文传输已拒绝下载")
+
+
 def prune_events(conn: sqlite3.Connection, keep_seconds: int = 86400) -> None:
     conn.execute("DELETE FROM events WHERE created_at < ?", (now_iso(-keep_seconds),))

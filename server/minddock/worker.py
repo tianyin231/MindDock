@@ -21,7 +21,7 @@ from minddock.qq.replies import prune_inbound
 from minddock.settings_store import SettingsStore
 from minddock.storage import Archiver, cleanup_local, enqueue_pending
 from minddock.thumbs import ThumbnailError, make_thumbnail, thumb_path_for
-from minddock.util import emit, prune_events
+from minddock.util import emit, prune_events, require_https
 
 log = logging.getLogger(__name__)
 
@@ -132,6 +132,7 @@ async def handle_download(worker: Worker, file_id: str) -> None:
         return
     if not row["source_url"]:
         raise RuntimeError("没有下载地址")
+    require_https(row["source_url"])
 
     now = datetime.now(UTC)
     suffix = Path(row["original_name"] or "").suffix[:10]

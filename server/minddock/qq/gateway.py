@@ -128,6 +128,8 @@ class Gateway:
 
     async def connect_once(self) -> None:
         url = await self.api.gateway_url()
+        if not url.lower().startswith("wss://"):
+            raise RuntimeError("QQ 网关地址不是 wss://，为避免明文传输已拒绝连接")
         async with connect(url, open_timeout=20, ping_interval=None, max_size=2**22) as ws:
             hello = json.loads(await asyncio.wait_for(ws.recv(), 20))
             if hello.get("op") != 10:

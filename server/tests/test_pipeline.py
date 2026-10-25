@@ -19,7 +19,7 @@ from minddock.secret_rules import detect_secret
 from minddock.security import Cipher
 from minddock.settings_store import SettingsStore
 from minddock.timeutil import local_now
-from minddock.util import kv_get, kv_set
+from minddock.util import kv_get, kv_set, require_https
 
 TZ = "Asia/Shanghai"
 AI_CFG = {"base_url": "https://ai.example.com/v1", "api_key": "k", "model_text": "m"}
@@ -264,12 +264,36 @@ def test_parse_c2c_event():
         "author": {"user_openid": "OPENID"},
         "content": " 你好 ",
         "attachments": [
-            {"url": "//multimedia.nt.qq.com.cn/x", "filename": "a.png", "content_type": "image/png"}
+            {
+                "url": "//multimedia.nt.qq.com.cn/x",
+                "filename": "a.png",
+                "content_type": "image/png",
+            },
+            {"url": "http://multimedia.nt.qq.com.cn/y", "filename": "b.png"},
+            {"url": "ftp://example.com/z", "filename": "c.bin"},
         ],
     }
     parsed = parse_c2c(data)
     assert parsed.openid == "OPENID" and parsed.msg_id == "ROBOT1.0_abc"
-    assert parsed.attachments[0].url.startswith("https://")
+    assert [a.url for a in parsed.attachments] == [
+        "https://multimedia.nt.qq.com.cn/x",
+        "https://multimedia.nt.qq.com.cn/y",
+        "ftp://example.com/z",
+    ]
+
+
+def test_downloads_refuse_plain_http():
+    with pytest.raises(RuntimeError, match="HTTPS"):
+        require_https("http://multimedia.nt.qq.com.cn/y")
+    require_https("https://multimedia.nt.qq.com.cn/y")
+
+    class PlainGateway:
+        async def gateway_url(self):
+            return "ws://api.sgroup.qq.com/websocket"
+
+    gw = Gateway(api=PlainGateway(), on_dispatch=None, on_status=lambda s, d: None)
+    with pytest.raises(RuntimeError, match="wss"):
+        asyncio.run(gw.connect_once())
 
 
 # ---- 网关协议 ----
