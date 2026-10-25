@@ -55,18 +55,24 @@ def _read_identity() -> str:
     return getpass.getpass("备份私钥（AGE-SECRET-KEY-…）：")
 
 
-def _backup() -> int:
-    from minddock import backup
+async def _backup() -> int:
+    """与每日自动备份走同一流程：生成、记录状态、配置了夸克就上传。"""
+    import httpx2
+
+    from minddock import backup, backup_runner
+    from minddock.security import load_cipher
+    from minddock.settings_store import SettingsStore
+    from minddock.worker import Worker
 
     config = get_settings()
     conn = connect(config.db_path)
-    try:
-        result = backup.create_backup(conn, config)
-    except backup.BackupError as exc:
-        backup.record(conn, ok=False, error=str(exc), failedAt=_now())
-        print(f"备份失败：{exc}", file=sys.stderr)
+    store = SettingsStore(conn, load_cipher(config.secret_key, config.data_dir))
+    async with httpx2.AsyncClient(timeout=30, follow_redirects=True) as http:
+        result = await backup_runner.run(Worker(conn, store, http, config))
+    state = backup.status(conn)
+    if result is None:
+        print(f"备份失败：{state.get('error')}", file=sys.stderr)
         return 1
-    backup.record(conn, ok=True, error=None, last=result)
     counts = result["counts"]
     print(
         f"已备份：{config.data_dir / backup.BACKUP_DIR / result['name']}（{result['size']:,} 字节）\n"
@@ -74,6 +80,11 @@ def _backup() -> int:
         f"随包文件 {result['files']} 个"
         + (f"，{result['missing']} 个本地文件已不存在" if result["missing"] else "")
     )
+    remote = state.get("remote") or {}
+    if remote.get("name") == result["name"] and remote.get("ok"):
+        print(f"已上传夸克：{remote['path']}")
+    elif remote.get("ok") is False:
+        print(f"上传夸克失败（本地备份不受影响）：{remote.get('error')}", file=sys.stderr)
     return 0
 
 
@@ -101,12 +112,6 @@ def _restore(archive: Path, *, force: bool, check: bool) -> int:
         + (f"；{result['lost']} 个未上传的原件备份时已不存在" if result["lost"] else "")
     )
     return 0
-
-
-def _now() -> str:
-    from minddock.db import now_iso
-
-    return now_iso()
 
 
 async def _run_service(name: str) -> None:
@@ -179,7 +184,7 @@ def main() -> None:
     elif args.command == "check":
         asyncio.run(_check(args.sections))
     elif args.command == "backup":
-        sys.exit(_backup())
+        sys.exit(asyncio.run(_backup()))
     elif args.command == "backup-keygen":
         from minddock.backup import generate_keypair
 
