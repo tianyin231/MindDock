@@ -1,0 +1,24 @@
+# 面板站点的公共配置，由 Caddyfile（宝塔模式）和 Caddyfile.direct（独立模式）引入
+
+tls {
+	issuer acme {
+		# 证书统一走 HTTP-01（80 端口），两种模式都适用
+		disable_tlsalpn_challenge
+	}
+}
+
+# 实时事件（SSE）不压缩，避免被缓冲导致推送延迟
+@compressible not path /api/events
+encode @compressible zstd gzip
+
+header {
+	Strict-Transport-Security "max-age=31536000"
+	X-Content-Type-Options "nosniff"
+	X-Frame-Options "DENY"
+	Referrer-Policy "no-referrer"
+	Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+	-Server
+}
+
+reverse_proxy panel:8080

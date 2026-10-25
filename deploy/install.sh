@@ -2,13 +2,62 @@
 # 首次部署（以 root 运行，可重复执行）：
 #   curl -fsSL https://raw.githubusercontent.com/tianyin231/MindDock/main/deploy/install.sh | bash -s -- minddock.example.com
 # 或在已克隆的仓库里：bash deploy/install.sh minddock.example.com
+#
+# 选项：
+#   --mode auto|bt|direct  入口模式。auto（默认）：有宝塔 nginx 用宝塔模式，否则 80/443 空闲时用独立模式
 set -euo pipefail
 
-DOMAIN="${1:?用法：install.sh <域名>}"
 DIR=/opt/minddock
 REPO=https://github.com/tianyin231/MindDock.git
 
 say() { printf '\033[1;35m==>\033[0m %s\n' "$*"; }
+die() { printf '\033[1;31m错误：\033[0m%s\n' "$*" >&2; exit 1; }
+
+DOMAIN=""
+MODE=auto
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --mode) MODE="${2:?--mode 需要 auto、bt 或 direct}"; shift 2 ;;
+    -h|--help) sed -n '2,8p' "$0"; exit 0 ;;
+    -*) die "未知选项：$1" ;;
+    *) DOMAIN="$1"; shift ;;
+  esac
+done
+[ -n "$DOMAIN" ] || die "用法：install.sh <域名> [--mode auto|bt|direct]"
+[ "$(id -u)" -eq 0 ] || die "请以 root 运行"
+case "$MODE" in auto|bt|direct) ;; *) die "--mode 只能是 auto、bt 或 direct" ;; esac
+
+BT_NGINX=/www/server/panel/vhost/nginx
+port_holder() { ss -Hltnp "sport = :$1" 2>/dev/null | grep -v docker-proxy || true; }
+
+# ---- 基础工具与 Docker ----
+
+missing=()
+for cmd in git curl openssl ss; do
+  command -v "$cmd" >/dev/null || missing+=("$cmd")
+done
+if [ ${#missing[@]} -gt 0 ]; then
+  say "安装基础工具：${missing[*]}"
+  if command -v apt-get >/dev/null; then
+    apt-get update -qq
+    apt-get install -y -qq git curl openssl iproute2 >/dev/null
+  elif command -v dnf >/dev/null; then
+    dnf install -y -q git curl openssl iproute
+  elif command -v yum >/dev/null; then
+    yum install -y -q git curl openssl iproute
+  else
+    die "缺少 ${missing[*]}，请先手动安装"
+  fi
+fi
+
+if ! command -v docker >/dev/null; then
+  say "安装 Docker（官方脚本 get.docker.com）"
+  curl -fsSL https://get.docker.com | sh
+  systemctl enable --now docker >/dev/null 2>&1 || true
+fi
+docker compose version >/dev/null 2>&1 || die "缺少 docker compose 插件，请安装 docker-compose-plugin"
+
+# ---- 代码 ----
 
 say "代码：$DIR"
 if [ ! -d "$DIR/.git" ]; then
@@ -16,6 +65,33 @@ if [ ! -d "$DIR/.git" ]; then
 fi
 cd "$DIR"
 git pull --ff-only
+
+# ---- 入口模式 ----
+
+current_mode=$(grep -s '^MINDDOCK_MODE=' .env | cut -d= -f2- || true)
+if [ "$MODE" = auto ]; then
+  if [ -n "$current_mode" ]; then
+    MODE=$current_mode
+  elif [ -d "$BT_NGINX" ]; then
+    MODE=bt
+  elif [ -z "$(port_holder 80)$(port_holder 443)" ]; then
+    MODE=direct
+  else
+    die "80 或 443 端口已被占用，且没有找到宝塔 nginx：
+$(port_holder 80)$(port_holder 443)
+可以停掉占用端口的程序后用 --mode direct，或让现有的反向代理按 deploy/nginx-sni-443.conf 转发后用 --mode bt"
+  fi
+fi
+say "入口模式：$([ "$MODE" = bt ] && echo '宝塔模式（宝塔 nginx 转发给 Caddy）' || echo '独立模式（Caddy 直接监听 80/443）')"
+
+# ---- .env ----
+
+# 写入或替换 .env 中的一项
+set_env() {
+  local key=$1 value=$2
+  { grep -v "^$key=" .env || true; echo "$key=$value"; } > .env.tmp
+  mv .env.tmp .env
+}
 
 if [ ! -f .env ]; then
   say "生成 .env（加密主密钥与 OpenList 管理员密码，仅保存在本机）"
@@ -31,6 +107,16 @@ MINDDOCK_OPENLIST_ADMIN_PASSWORD=$(openssl rand -hex 16)
 TZ=Asia/Shanghai
 EOF
 fi
+umask 077
+set_env MINDDOCK_MODE "$MODE"
+if [ "$MODE" = direct ]; then
+  set_env MINDDOCK_CADDYFILE Caddyfile.direct
+  set_env MINDDOCK_HTTPS_BIND 443
+  set_env MINDDOCK_HTTP_BIND 80
+else
+  # 宝塔模式用 compose 里的默认值（只监听本机）
+  { grep -Ev '^MINDDOCK_(CADDYFILE|HTTPS_BIND|HTTP_BIND)=' .env || true; } > .env.tmp && mv .env.tmp .env
+fi
 chmod 600 .env
 
 say "数据目录"
@@ -42,42 +128,52 @@ say "检查域名解析"
 public_ip=$(curl -s -4 --max-time 5 ifconfig.me || true)
 resolved=$(getent ahostsv4 "$DOMAIN" | awk '{print $1}' | sort -u | tr '\n' ' ')
 if [[ " $resolved " != *" $public_ip "* ]]; then
-  echo "域名 $DOMAIN 解析到 [${resolved:-无}]，本机公网 IP 为 $public_ip。请先添加 A 记录再运行。" >&2
-  exit 1
+  die "域名 $DOMAIN 解析到 [${resolved:-无}]，本机公网 IP 为 $public_ip。请先添加 A 记录再运行。"
 fi
 
-say "宝塔 nginx：80 端口转给 Caddy（证书验证与跳转 HTTPS）"
-site_conf="/www/server/panel/vhost/nginx/$DOMAIN.conf"
-if [ -f "$site_conf" ]; then
-  echo "已存在 $site_conf（可能已在宝塔中添加为网站），保持不变"
-elif [ -d /www/server/panel/vhost/nginx ]; then
-  sed "s/__DOMAIN__/$DOMAIN/g" deploy/nginx-site.conf > "$site_conf"
-  nginx -t && nginx -s reload
-else
-  echo "未找到宝塔 nginx，请自行把 80 端口反向代理到 127.0.0.1:8081" >&2
+# ---- 对外入口 ----
+
+if [ "$MODE" = bt ]; then
+  say "宝塔 nginx：80 端口转给 Caddy（证书验证与跳转 HTTPS）"
+  site_conf="$BT_NGINX/$DOMAIN.conf"
+  if [ -f "$site_conf" ]; then
+    echo "已存在 $site_conf（可能已在宝塔中添加为网站），保持不变"
+  elif [ -d "$BT_NGINX" ]; then
+    sed "s/__DOMAIN__/$DOMAIN/g" deploy/nginx-site.conf > "$site_conf"
+    nginx -t && nginx -s reload
+  else
+    echo "未找到宝塔 nginx，请自行把 80 端口反向代理到 127.0.0.1:8081" >&2
+  fi
+
+  say "宝塔 nginx：443 端口按域名分流给 Caddy"
+  sni_conf="$BT_NGINX/tcp/sni_443.conf"
+  holder=$(ss -Hltnp 'sport = :443' | grep -v nginx || true)
+  if [ -f "$sni_conf" ]; then
+    grep -q "$DOMAIN" "$sni_conf" || echo "请在 $sni_conf 的 map 中加入一行：$DOMAIN 127.0.0.1:8443;" >&2
+  elif [ -n "$holder" ]; then
+    echo "443 端口被其他程序占用，请把它改为监听本机其他端口，再参照 deploy/nginx-sni-443.conf 写入 $sni_conf" >&2
+  elif [ -d "$(dirname "$sni_conf")" ]; then
+    sed "s/__DOMAIN__/$DOMAIN/g" deploy/nginx-sni-443.conf > "$sni_conf"
+    nginx -t && nginx -s reload
+  else
+    echo "未找到宝塔 nginx，请自行把 443 端口的连接（PROXY protocol）转发到 127.0.0.1:8443" >&2
+  fi
 fi
 
-say "宝塔 nginx：443 端口按域名分流给 Caddy"
-sni_conf=/www/server/panel/vhost/nginx/tcp/sni_443.conf
-holder=$(ss -Hltnp 'sport = :443' | grep -v nginx || true)
-if [ -f "$sni_conf" ]; then
-  grep -q "$DOMAIN" "$sni_conf" || echo "请在 $sni_conf 的 map 中加入一行：$DOMAIN 127.0.0.1:8443;" >&2
-elif [ -n "$holder" ]; then
-  echo "443 端口被其他程序占用，请把它改为监听本机其他端口，再参照 deploy/nginx-sni-443.conf 写入 $sni_conf" >&2
-elif [ -d "$(dirname "$sni_conf")" ]; then
-  sed "s/__DOMAIN__/$DOMAIN/g" deploy/nginx-sni-443.conf > "$sni_conf"
-  nginx -t && nginx -s reload
-else
-  echo "未找到宝塔 nginx，请自行把 443 端口的连接（PROXY protocol）转发到 127.0.0.1:8443" >&2
-fi
-
+say "防火墙放行 80/443"
 if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
+  ufw allow 80/tcp >/dev/null
   ufw allow 443/tcp >/dev/null
+elif command -v firewall-cmd >/dev/null && firewall-cmd --state >/dev/null 2>&1; then
+  firewall-cmd --permanent --add-service=http --add-service=https >/dev/null
+  firewall-cmd --reload >/dev/null
 fi
+
+# ---- 启动 ----
 
 say "拉取镜像并启动"
 docker compose pull
-docker compose up -d
+docker compose up -d --remove-orphans
 
 say "同步 OpenList 管理员密码"
 for _ in $(seq 1 30); do

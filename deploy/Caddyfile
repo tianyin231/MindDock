@@ -1,7 +1,8 @@
-# 服务器的 443 由宝塔 nginx 按域名（SNI）分流，只转发、不解密（见 deploy/nginx-sni-443.conf）：
+# 宝塔模式：服务器的 443 由宝塔 nginx 按域名（SNI）分流，只转发、不解密（见 deploy/nginx-sni-443.conf）：
 # 本域名转到 Caddy 的 8443（宿主 127.0.0.1:8443），并通过 PROXY protocol 带上访客真实 IP。
 # 80 端口由宝塔 nginx 整体反向代理到本容器的 80（宿主 127.0.0.1:8081）：
 # 证书验证（HTTP-01）由 Caddy 优先处理，其余请求跳转到 HTTPS。
+# 服务器上没有宝塔时用 Caddyfile.direct（独立模式），install.sh 会自动选择。
 {
 	http_port 80
 	https_port 8443
@@ -26,25 +27,5 @@ http://{$MINDDOCK_DOMAIN} {
 }
 
 https://{$MINDDOCK_DOMAIN}:8443 {
-	tls {
-		issuer acme {
-			disable_tlsalpn_challenge
-		}
-	}
-
-	# 实时事件（SSE）不压缩，避免被缓冲导致推送延迟
-	@compressible not path /api/events
-	encode @compressible zstd gzip
-
-	header {
-		Strict-Transport-Security "max-age=31536000"
-		X-Content-Type-Options "nosniff"
-		X-Frame-Options "DENY"
-		Referrer-Policy "no-referrer"
-		Permissions-Policy "camera=(), microphone=(), geolocation=()"
-		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
-		-Server
-	}
-
-	reverse_proxy panel:8080
+	import site.caddy
 }

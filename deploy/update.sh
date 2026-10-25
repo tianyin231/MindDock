@@ -3,13 +3,14 @@
 set -euo pipefail
 cd /opt/minddock
 
-caddy_before=$(git rev-parse HEAD:deploy/Caddyfile)
+# Caddy 的配置是挂载进去的文件，内容变了容器不会自动重建，需要手动重启
+caddy_rev() { git ls-tree HEAD deploy/ | grep -Ei 'caddy' || true; }
+caddy_before=$(caddy_rev)
 git pull --ff-only
-caddy_after=$(git rev-parse HEAD:deploy/Caddyfile)
+caddy_after=$(caddy_rev)
 
 docker compose pull
 docker compose up -d --remove-orphans
-# Caddyfile 是挂载进去的文件，内容变了容器不会自动重建，需要手动重启
 if [ "$caddy_before" != "$caddy_after" ]; then
   docker compose restart caddy
 fi

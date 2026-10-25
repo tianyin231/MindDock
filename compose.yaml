@@ -1,6 +1,8 @@
 # MindDock 部署编排。服务器上的 /opt/minddock 是本仓库的克隆，配置写在同目录的 .env（install.sh 生成）。
-# 不直接对外开放端口：宝塔 nginx 把 443 上本域名的连接转给 Caddy 的 8443（见 deploy/nginx-sni-443.conf），
-# 把 80 端口反向代理到 Caddy 的 80（见 deploy/nginx-site.conf）。
+# 两种入口模式（install.sh 自动选择并写入 .env）：
+# - 宝塔模式（默认）：Caddy 只监听本机，宝塔 nginx 把 443 上本域名的连接转给 Caddy 的 8443
+#   （见 deploy/nginx-sni-443.conf），把 80 端口反向代理到 Caddy 的 80（见 deploy/nginx-site.conf）；
+# - 独立模式：服务器上没有宝塔，Caddy 直接占用宿主的 80 / 443（deploy/Caddyfile.direct）。
 
 name: minddock
 
@@ -60,13 +62,15 @@ services:
     image: caddy:2.11.7-alpine
     restart: unless-stopped
     depends_on: [panel]
+    command: ["caddy", "run", "--config", "/etc/caddy/${MINDDOCK_CADDYFILE:-Caddyfile}", "--adapter", "caddyfile"]
     ports:
-      - "127.0.0.1:8443:8443"
-      - "127.0.0.1:8081:80"
+      - "${MINDDOCK_HTTPS_BIND:-127.0.0.1:8443}:8443"
+      - "${MINDDOCK_HTTP_BIND:-127.0.0.1:8081}:80"
     environment:
       MINDDOCK_DOMAIN: ${MINDDOCK_DOMAIN:?需要在 .env 中设置}
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # 两份 Caddyfile 共用 site.caddy，整个目录只读挂进去
+      - ./deploy:/etc/caddy:ro
       - ./data/caddy/data:/data
       - ./data/caddy/config:/config
     networks: [internal]

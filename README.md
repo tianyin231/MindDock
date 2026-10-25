@@ -52,17 +52,23 @@ npm run dev      # http://127.0.0.1:5173，接口请求转发到 8080
 镜像由 GitHub Actions 构建并发布到 `ghcr.io/tianyin231/minddock`：推送 `main` 生成 `main` 标签，打 `v0.2.0` 这样的 git 标签生成 `0.2.0` 和 `latest`，每次提交另有 `sha-xxxxxxx` 标签便于回滚。
 
 ```bash
-# 首次部署（root，服务器需已安装 Docker；域名需已解析到本机）
-git clone https://github.com/tianyin231/MindDock.git /opt/minddock
-bash /opt/minddock/deploy/install.sh minddock.example.com
+# 首次部署（root；域名需已解析到本机。缺 Docker 会自动安装）
+curl -fsSL https://raw.githubusercontent.com/tianyin231/MindDock/main/deploy/install.sh | bash -s -- minddock.example.com
 
 # 之后更新
 bash /opt/minddock/deploy/update.sh
 ```
 
-`install.sh` 会生成 `/opt/minddock/.env`（加密主密钥等，只在服务器上），配置宝塔 nginx 把 80 端口转给 Caddy（证书验证、跳转 HTTPS）、把 443 端口上本域名的连接按 SNI 转给 Caddy，并启动面板、OpenList 和 Caddy。面板地址为 `https://<域名>`。QQ 机器人、AI 模型、夸克网盘、邮件通知都在面板的"设置"页填写。
+`install.sh` 会生成 `/opt/minddock/.env`（加密主密钥等，只在服务器上），按服务器情况选择入口模式，并启动面板、OpenList 和 Caddy。面板地址为 `https://<域名>`。QQ 机器人、AI 模型、夸克网盘、邮件通知都在面板的"设置"页填写。
 
-443 由 nginx 的四层配置 `/www/server/panel/vhost/nginx/tcp/sni_443.conf` 按域名分流，只转发、不解密，证书由 Caddy 自动申请和续期（Let's Encrypt）。因此宝塔里的网站不能再直接开启 443 的 SSL，否则会与分流冲突；需要时在该文件的 map 中为域名加一条转发。
+| 入口模式 | 何时使用 | 做法 |
+| --- | --- | --- |
+| 独立模式 `direct` | 干净的服务器，80 / 443 空闲 | Caddy 直接监听 80 / 443，自动申请证书 |
+| 宝塔模式 `bt` | 装有宝塔，443 还要分给其他服务 | 宝塔 nginx 把 80 转给 Caddy，把 443 上本域名的连接按 SNI 转给 Caddy |
+
+默认自动选择（有宝塔用宝塔模式，否则独立模式），也可以用 `--mode direct` 或 `--mode bt` 指定；选择结果记在 `.env` 的 `MINDDOCK_MODE`，之后重复运行保持不变。
+
+宝塔模式下，443 由 nginx 的四层配置 `/www/server/panel/vhost/nginx/tcp/sni_443.conf` 按域名分流，只转发、不解密，证书由 Caddy 自动申请和续期（Let's Encrypt）。因此宝塔里的网站不能再直接开启 443 的 SSL，否则会与分流冲突；需要时在该文件的 map 中为域名加一条转发。
 
 在宝塔中管理：容器在"Docker → 容器编排"里显示为 `minddock`；域名可以在"网站 → Docker"里添加为反向代理网站（目标容器 `minddock-caddy-1`，端口 8081），代替 install.sh 写入的 nginx 配置。
 

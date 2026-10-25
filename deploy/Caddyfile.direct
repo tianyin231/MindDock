@@ -1,0 +1,21 @@
+# 独立模式（服务器上没有宝塔 nginx）：Caddy 直接接管宿主的 80 / 443。
+# compose 把宿主 443 映射到容器的 8443、宿主 80 映射到容器的 80（install.sh 写入 .env）。
+# 这里不接受 PROXY protocol：连接直接来自访客，信任它的头部会让访客伪造来源 IP。
+{
+	http_port 80
+	https_port 8443
+	admin off
+	servers :8443 {
+		# 没有映射 UDP，HTTP/3 用不上
+		protocols h1 h2
+	}
+}
+
+# 自动跳转会带上内部端口 8443，这里显式跳到标准的 443
+http://{$MINDDOCK_DOMAIN} {
+	redir https://{$MINDDOCK_DOMAIN}{uri} permanent
+}
+
+https://{$MINDDOCK_DOMAIN}:8443 {
+	import site.caddy
+}
